@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	dbn "github.com/NimbleMarkets/dbn-go"
+	dbn "github.com/WT-In/dbn-go"
 )
 
 // Databento Batch API:

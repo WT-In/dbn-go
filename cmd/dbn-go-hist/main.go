@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NimbleMarkets/dbn-go"
-	dbn_hist "github.com/NimbleMarkets/dbn-go/hist"
-	dbn_tui "github.com/NimbleMarkets/dbn-go/internal/tui"
+	"github.com/WT-In/dbn-go"
+	dbn_hist "github.com/WT-In/dbn-go/hist"
+	dbn_tui "github.com/WT-In/dbn-go/internal/tui"
 	"github.com/charmbracelet/huh"
 	"github.com/dustin/go-humanize"
 	"github.com/relvacode/iso8601"

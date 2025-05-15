@@ -14,7 +14,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/NimbleMarkets/dbn-go"
+	"github.com/WT-In/dbn-go"
 )
 
 const (

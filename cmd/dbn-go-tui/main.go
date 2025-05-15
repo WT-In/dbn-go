@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	dbn_tui "github.com/NimbleMarkets/dbn-go/internal/tui"
+	dbn_tui "github.com/WT-In/dbn-go/internal/tui"
 	"github.com/spf13/pflag"
 )
 

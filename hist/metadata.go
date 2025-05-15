@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NimbleMarkets/dbn-go"
+	dbn "github.com/WT-In/dbn-go"
 )
 
 // A type of data feed.

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/NimbleMarkets/dbn-go"
+	dbn "github.com/WT-In/dbn-go"
 )
 
 func WriteDbnFileAsJson(sourceFile string, forceZstdInput bool, writer io.Writer) error {

@@ -8,8 +8,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/NimbleMarkets/dbn-go"
-	dbn_file "github.com/NimbleMarkets/dbn-go/internal/file"
+	"github.com/WT-In/dbn-go"
+	dbn_file "github.com/WT-In/dbn-go/internal/file"
 	"github.com/spf13/cobra"
 )
 

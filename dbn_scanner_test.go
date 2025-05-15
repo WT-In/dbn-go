@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/NimbleMarkets/dbn-go"
+	"github.com/WT-In/dbn-go"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

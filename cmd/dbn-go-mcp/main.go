@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NimbleMarkets/dbn-go"
-	dbn_hist "github.com/NimbleMarkets/dbn-go/hist"
+	"github.com/WT-In/dbn-go"
+	dbn_hist "github.com/WT-In/dbn-go/hist"
 	"github.com/mark3labs/mcp-go/mcp"
 	mcp_server "github.com/mark3labs/mcp-go/server"
 	"github.com/relvacode/iso8601"

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/NimbleMarkets/dbn-go"
+	dbn "github.com/WT-In/dbn-go"
 	"github.com/apache/arrow-go/v18/parquet"
 	"github.com/apache/arrow-go/v18/parquet/compress"
 	pqfile "github.com/apache/arrow-go/v18/parquet/file"

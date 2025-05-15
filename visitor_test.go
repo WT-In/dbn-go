@@ -3,7 +3,7 @@
 package dbn_test
 
 import (
-	"github.com/NimbleMarkets/dbn-go"
+	"github.com/WT-In/dbn-go"
 	. "github.com/onsi/ginkgo/v2"
 )
 

@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	dbn_hist "github.com/NimbleMarkets/dbn-go/hist"
+	dbn_hist "github.com/WT-In/dbn-go/hist"
 	"github.com/hashicorp/go-retryablehttp"
 )
 

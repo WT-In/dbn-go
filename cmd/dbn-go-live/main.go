@@ -11,8 +11,8 @@ import (
 	"os"
 	"time"
 
-	dbn "github.com/NimbleMarkets/dbn-go"
-	dbn_live "github.com/NimbleMarkets/dbn-go/live"
+	dbn "github.com/WT-In/dbn-go"
+	dbn_live "github.com/WT-In/dbn-go/live"
 	"github.com/relvacode/iso8601"
 	"github.com/spf13/pflag"
 )

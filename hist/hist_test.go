@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	dbn "github.com/NimbleMarkets/dbn-go"
+	dbn "github.com/WT-In/dbn-go"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

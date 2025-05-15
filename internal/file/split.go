@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/NimbleMarkets/dbn-go"
+	dbn "github.com/WT-In/dbn-go"
 	"github.com/neomantra/ymdflag"
 )
 

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/NimbleMarkets/dbn-go"
+	"github.com/WT-In/dbn-go"
 )
 
 // Returns a string key/value map from a Databento control message

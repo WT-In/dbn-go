@@ -7,7 +7,7 @@ import (
 	"slices"
 	"time"
 
-	dbn_hist "github.com/NimbleMarkets/dbn-go/hist"
+	dbn_hist "github.com/WT-In/dbn-go/hist"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
