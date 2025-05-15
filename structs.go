@@ -1187,7 +1187,7 @@ func (*TradeMsg) RType() RType {
 	return RType_Mbp0
 }
 
-func (*TradeMsg) RSize() int {
+func (*TradeMsg) RSize() uint16 {
 	return TradeMsg_Size
 }
 
