@@ -1167,3 +1167,61 @@ func (r *InstrumentDefMsg) Fill_Json(val *fastjson.Value, header *RHeader) error
 	r.TickRule = uint8(val.GetUint("tick_rule"))
 	return nil
 }
+
+type TradeMsg struct {
+	Header    RHeader `json:"hd" csv:"hd"`
+	Price     int64   `json:"price" csv:"price"`
+	Size      uint32  `json:"size" csv:"size"`
+	Action    byte    `json:"action" csv:"action"`
+	Side      byte    `json:"side" csv:"side"`
+	Flags     uint8   `json:"flags" csv:"flags"`
+	Depth     uint8   `json:"depth" csv:"depth"`
+	TsRecv    uint64  `json:"ts_recv" csv:"ts_recv"`
+	TsInDelta int32   `json:"ts_in_delta" csv:"ts_in_delta"`
+	Sequence  uint32  `json:"sequence" csv:"sequence"`
+}
+
+const TradeMsg_Size = RHeader_Size + 32
+
+func (*TradeMsg) RType() RType {
+	return RType_Mbp0
+}
+
+func (*TradeMsg) RSize() int {
+	return TradeMsg_Size
+}
+
+func (r *TradeMsg) Fill_Raw(b []byte) error {
+	if len(b) < MboMsg_Size {
+		return unexpectedBytesError(len(b), MboMsg_Size)
+	}
+	err := r.Header.Fill_Raw(b[0:RHeader_Size])
+	if err != nil {
+		return err
+	}
+	body := b[RHeader_Size:]
+	r.Price = int64(binary.LittleEndian.Uint64(body[0:8]))
+	r.Size = binary.LittleEndian.Uint32(body[8:12])
+	r.Action = body[12]
+	r.Side = body[13]
+	r.Flags = body[14]
+	r.Depth = body[15]
+	r.TsRecv = binary.LittleEndian.Uint64(body[16:24])
+	r.TsInDelta = int32(binary.LittleEndian.Uint32(body[24:28]))
+	r.Sequence = binary.LittleEndian.Uint32(body[28:32])
+	return nil
+}
+
+func (r *TradeMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
+	r.Header = *header
+	r.Price = fastjson_GetInt64FromString(val, "price")
+	r.Size = uint32(val.GetUint("size"))
+	r.Action = byte(val.GetUint("action"))
+	r.Side = byte(val.GetUint("side"))
+	r.Flags = uint8(val.GetUint("flags"))
+	r.Depth = uint8(val.GetUint("depth"))
+	r.TsRecv = fastjson_GetUint64FromString(val, "ts_recv")
+	r.TsInDelta = int32(val.GetInt("ts_in_delta"))
+	r.Sequence = uint32(val.GetUint("sequence"))
+	return nil
+}
