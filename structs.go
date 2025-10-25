@@ -1225,3 +1225,64 @@ func (r *TradeMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
 	r.Sequence = uint32(val.GetUint("sequence"))
 	return nil
 }
+
+type TcbboMsg struct {
+	Header    RHeader                `json:"hd" csv:"hd"`                           // The record header.
+	Price     int64                  `json:"price" csv:"price"`                     // The order price expressed as a signed integer where every 1 unit corresponds to 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
+	Size      uint32                 `json:"size" csv:"size"`                       // The order quantity.
+	Action    byte                   `json:"action" csv:"action"`                   // The event action. Can be **A**dd, **C**ancel, **M**odify, clea**R**, or **T**rade.
+	Side      byte                   `json:"side" csv:"side"`                       // The side that initiates the event. Can be **A**sk for a sell order (or sell aggressor in a trade), **B**id for a buy order (or buy aggressor in a trade), or  **N**one where no side is specified by the original source.
+	Flags     uint8                  `json:"flags" csv:"flags"`                     // A bit field indicating event end, message characteristics, and data quality. See [`enums::flags`](crate::enums::flags) for possible values.
+	Reserved1 byte                   `json:"_reserved1,omitempty" csv:"_reserved1"` // Reserved for future usage.
+	TsRecv    uint64                 `json:"ts_recv" csv:"ts_recv"`                 // The capture-server-received timestamp expressed as number of nanoseconds since the UNIX epoch.
+	TsInDelta int32                  `json:"ts_in_delta" csv:"ts_in_delta"`         // The delta of `ts_recv - ts_exchange_send`, max 2 seconds.
+	Reserved2 [4]byte                `json:"_reserved2,omitempty" csv:"_reserved2"` // Reserved for future usage.
+	Level     ConsolidatedBidAskPair `json:"levels" csv:"levels"`                   // The top of the order book.
+}
+
+const TcbboMsg_Size = RHeader_Size + 64
+
+func (*TcbboMsg) RType() RType {
+	return RType_Tcbbo
+}
+
+func (*TcbboMsg) RSize() uint16 {
+	return TcbboMsg_Size
+}
+
+func (r *TcbboMsg) Fill_Raw(b []byte) error {
+	if len(b) < TcbboMsg_Size {
+		return unexpectedBytesError(len(b), TcbboMsg_Size)
+	}
+	err := r.Header.Fill_Raw(b[0:RHeader_Size])
+	if err != nil {
+		return err
+	}
+	body := b[RHeader_Size:]
+	r.Price = int64(binary.LittleEndian.Uint64(body[0:8]))
+	r.Size = binary.LittleEndian.Uint32(body[8:12])
+	r.Action = body[12]
+	r.Side = body[13]
+	r.Flags = body[14]
+	r.TsRecv = binary.LittleEndian.Uint64(body[16:24])
+	r.TsInDelta = int32(binary.LittleEndian.Uint32(body[24:28]))
+	r.Level.Fill_Raw(body[32 : 32+ConsolidatedBidAskPair_Size])
+	return nil
+}
+
+func (r *TcbboMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
+	r.Header = *header
+	r.Price = fastjson_GetInt64FromString(val, "price")
+	r.Size = uint32(val.GetUint("size"))
+	r.Action = byte(val.GetUint("action"))
+	r.Side = byte(val.GetUint("side"))
+	r.Flags = uint8(val.GetUint("flags"))
+	r.TsRecv = fastjson_GetUint64FromString(val, "ts_recv")
+	r.TsInDelta = int32(val.GetUint("ts_in_delta"))
+	levelsArr := val.GetArray("levels")
+	if len(levelsArr) == 0 {
+		return errors.New("levels array is empty")
+	}
+	r.Level.Fill_Json(levelsArr[0])
+	return nil
+}
