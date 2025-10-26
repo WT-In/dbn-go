@@ -1009,7 +1009,6 @@ type InstrumentDefMsg struct {
 	ContractMultiplierUnit  int8                           `json:"contract_multiplier_unit" csv:"contract_multiplier_unit"`     // The type of `contract_multiplier`. Either `1` for hours, or `2` for days.
 	FlowScheduleType        int8                           `json:"flow_schedule_type" csv:"flow_schedule_type"`                 // The schedule for delivering electricity.
 	TickRule                uint8                          `json:"tick_rule" csv:"tick_rule"`                                   // The tick rule of the spread.
-	Reserved                [10]byte                       `json:"_reserved" csv:"_reserved"`                                   // Filler for alignment.
 }
 
 // Minimum size of InstrumentDefMsg, the size with 0-length c-strings
@@ -1020,7 +1019,8 @@ type InstrumentDefMsg struct {
 //		return InstrumentDefMsg_MinSize + 2*cstrLength
 //	}
 
-const InstrumentDefMsg_Size = RHeader_Size + 313 + MetadataV2_SymbolCstrLen
+const InstrumentDefMsg_MinSize = RHeader_Size + 303
+const InstrumentDefMsg_Size = InstrumentDefMsg_MinSize + MetadataV2_SymbolCstrLen
 
 func (*InstrumentDefMsg) RType() RType {
 	return RType_InstrumentDef
@@ -1030,10 +1030,14 @@ func (*InstrumentDefMsg) RSize() uint16 {
 	return InstrumentDefMsg_Size
 }
 
-// func (r *InstrumentDefMsg) Fill_Raw(b []byte, cstrLength uint16) error {
 func (r *InstrumentDefMsg) Fill_Raw(b []byte) error {
-	if len(b) < StatMsg_Size {
-		return unexpectedBytesError(len(b), StatMsg_Size)
+	return r.Fill_RawWithLen(b, MetadataV2_SymbolCstrLen)
+}
+
+func (r *InstrumentDefMsg) Fill_RawWithLen(b []byte, symbolLen uint16) error {
+	expectedSize := InstrumentDefMsg_MinSize + int(symbolLen)
+	if len(b) < expectedSize {
+		return unexpectedBytesError(len(b), expectedSize)
 	}
 	err := r.Header.Fill_Raw(b[0:RHeader_Size])
 	if err != nil {
@@ -1072,34 +1076,35 @@ func (r *InstrumentDefMsg) Fill_Raw(b []byte) error {
 	r.MaturityYear = binary.LittleEndian.Uint16(body[164:166])
 	r.DecayStartDate = binary.LittleEndian.Uint16(body[166:168])
 	r.ChannelID = binary.LittleEndian.Uint16(body[168:170])
-	copy(r.Currency[:], body[170:174])            // byte[4]
-	copy(r.SettlCurrency[:], body[174:178])       // byte[4]
-	copy(r.Secsubtype[:], body[178:184])          // byte[6]
-	copy(r.RawSymbol[:], body[184:255])           // byte[MetadataV2_SymbolCstrLen] = 71
-	copy(r.Group[:], body[255:276])               // byte[21]
-	copy(r.Exchange[:], body[276:281])            // byte[5]
-	copy(r.Asset[:], body[281:288])               // byte[7]
-	copy(r.Cfi[:], body[288:295])                 // byte[7]
-	copy(r.SecurityType[:], body[295:302])        // byte[7]
-	copy(r.UnitOfMeasure[:], body[302:333])       // byte[31]
-	copy(r.Underlying[:], body[333:354])          // byte[21]
-	copy(r.StrikePriceCurrency[:], body[354:358]) // byte[4]
-	r.InstrumentClass = body[358]
-	r.MatchAlgorithm = body[359]
-	r.MdSecurityTradingStatus = body[360]
-	r.MainFraction = body[361]
-	r.PriceDisplayFormat = body[362]
-	r.SettlPrice_type = body[363]
-	r.SubFraction = body[364]
-	r.UnderlyingProduct = body[365]
-	r.SecurityUpdateAction = body[366]
-	r.MaturityMonth = body[367]
-	r.MaturityDay = body[368]
-	r.MaturityWeek = body[369]
-	r.UserDefinedInstrument = UserDefinedInstrument(body[370])
-	r.ContractMultiplierUnit = int8(body[371])
-	r.FlowScheduleType = int8(body[372])
-	r.TickRule = body[373]
+	copy(r.Currency[:], body[170:174])      // byte[4]
+	copy(r.SettlCurrency[:], body[174:178]) // byte[4]
+	copy(r.Secsubtype[:], body[178:184])    // byte[6]
+	symbolEnd := 184 + int(symbolLen)
+	copy(r.RawSymbol[:], body[184:symbolEnd])
+	copy(r.Group[:], body[symbolEnd+0:symbolEnd+21])                 // byte[21]
+	copy(r.Exchange[:], body[symbolEnd+21:symbolEnd+26])             // byte[5]
+	copy(r.Asset[:], body[symbolEnd+26:symbolEnd+33])                // byte[7]
+	copy(r.Cfi[:], body[symbolEnd+33:symbolEnd+40])                  // byte[7]
+	copy(r.SecurityType[:], body[symbolEnd+40:symbolEnd+47])         // byte[7]
+	copy(r.UnitOfMeasure[:], body[symbolEnd+47:symbolEnd+78])        // byte[31]
+	copy(r.Underlying[:], body[symbolEnd+78:symbolEnd+99])           // byte[21]
+	copy(r.StrikePriceCurrency[:], body[symbolEnd+99:symbolEnd+103]) // byte[4]
+	r.InstrumentClass = body[symbolEnd+103]
+	r.MatchAlgorithm = body[symbolEnd+104]
+	r.MdSecurityTradingStatus = body[symbolEnd+105]
+	r.MainFraction = body[symbolEnd+106]
+	r.PriceDisplayFormat = body[symbolEnd+107]
+	r.SettlPrice_type = body[symbolEnd+108]
+	r.SubFraction = body[symbolEnd+109]
+	r.UnderlyingProduct = body[symbolEnd+110]
+	r.SecurityUpdateAction = body[symbolEnd+111]
+	r.MaturityMonth = body[symbolEnd+112]
+	r.MaturityDay = body[symbolEnd+113]
+	r.MaturityWeek = body[symbolEnd+114]
+	r.UserDefinedInstrument = UserDefinedInstrument(body[symbolEnd+115])
+	r.ContractMultiplierUnit = int8(body[symbolEnd+116])
+	r.FlowScheduleType = int8(body[symbolEnd+117])
+	r.TickRule = body[symbolEnd+118]
 	return nil
 }
 

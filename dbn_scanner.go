@@ -308,9 +308,11 @@ func (s *DbnScanner) Visit(visitor Visitor) error {
 
 	// InstrumentDef
 	case RType_InstrumentDef:
-		// TODO: handle multiple versions... this is v2...
+		if s.metadata == nil {
+			return ErrNoMetadata
+		}
 		record := InstrumentDefMsg{}
-		if err := record.Fill_Raw(s.lastRecord[:s.lastSize]); err != nil {
+		if err := record.Fill_RawWithLen(s.lastRecord[:s.lastSize], s.metadata.SymbolCstrLen); err != nil {
 			return err // TODO: OnError()
 		} else {
 			return visitor.OnInstrumentDefMsg(&record)
