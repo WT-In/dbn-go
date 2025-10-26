@@ -10,6 +10,7 @@ type Visitor interface {
 
 	OnOhlcv(record *OhlcvMsg) error
 	OnCbbo(record *CbboMsg) error
+	OnTcbbo(record *TcbboMsg) error
 
 	OnImbalance(record *ImbalanceMsg) error
 	OnStatMsg(record *StatMsg) error
