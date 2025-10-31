@@ -4,6 +4,7 @@ package dbn
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 )
 
@@ -130,6 +131,7 @@ func (s *DbnScanner) Next() bool {
 func DbnScannerDecode[R Record, RP RecordPtr[R]](s *DbnScanner) (*R, error) {
 	// Ensure there's a record to decode
 	if s.lastSize <= RHeader_Size {
+		fmt.Println(s.lastSize, RHeader_Size)
 		return nil, ErrNoRecord
 	}
 	recordLen := 4 * int(s.lastRecord[0])
@@ -308,9 +310,11 @@ func (s *DbnScanner) Visit(visitor Visitor) error {
 
 	// InstrumentDef
 	case RType_InstrumentDef:
-		// TODO: handle multiple versions... this is v2...
+		if s.metadata == nil {
+			return ErrNoMetadata
+		}
 		record := InstrumentDefMsg{}
-		if err := record.Fill_Raw(s.lastRecord[:s.lastSize]); err != nil {
+		if err := record.Fill_RawWithLen(s.lastRecord[:s.lastSize], s.metadata.SymbolCstrLen); err != nil {
 			return err // TODO: OnError()
 		} else {
 			return visitor.OnInstrumentDefMsg(&record)
