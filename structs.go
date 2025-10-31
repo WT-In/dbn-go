@@ -956,6 +956,7 @@ type InstrumentDefMsg struct {
 	HighLimitPrice           int64                               `json:"high_limit_price" csv:"high_limit_price"`                       // The allowable high limit price for the trading day in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
 	LowLimitPrice            int64                               `json:"low_limit_price" csv:"low_limit_price"`                         // The allowable low limit price for the trading day in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
 	MaxPriceVariation        int64                               `json:"max_price_variation" csv:"max_price_variation"`                 // The differential value for price banding in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
+	TradingReferencePrice    int64                               `json:"trading_reference_price" csv:"trading_reference_price"`         // The trading reference price for the instrument in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
 	UnitOfMeasureQty         int64                               `json:"unit_of_measure_qty" csv:"unit_of_measure_qty"`                 // The contract size for each instrument, in combination with `unit_of_measure`, in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
 	MinPriceIncrementAmount  int64                               `json:"min_price_increment_amount" csv:"min_price_increment_amount"`   // The value currently under development by the venue. Converted to units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
 	PriceRatio               int64                               `json:"price_ratio" csv:"price_ratio"`                                 // The value used for price calculation in spread and leg pricing in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
@@ -988,6 +989,7 @@ type InstrumentDefMsg struct {
 	ChannelID                uint16                              `json:"channel_id" csv:"channel_id"`                                   // The channel ID assigned by Databento as an incrementing integer starting at zero.
 	LegCount                 uint16                              `json:"leg_count" csv:"leg_count"`                                     // The number of legs in the strategy or spread. Will be 0 for outrights.
 	LegIndex                 uint16                              `json:"leg_index" csv:"leg_index"`                                     // The 0-based index of the leg.
+	TradingReferenceDate     uint16                              `json:"trading_reference_date" csv:"trading_reference_date"`           // The trading reference date for the instrument.
 	Currency                 [4]byte                             `json:"currency" csv:"currency"`                                       // The currency used for price fields.
 	SettlCurrency            [4]byte                             `json:"settl_currency" csv:"settl_currency"`                           // The currency used for settlement, if different from `currency`.
 	Secsubtype               [6]byte                             `json:"secsubtype" csv:"secsubtype"`                                   // The strategy type of the spread.
@@ -1003,8 +1005,10 @@ type InstrumentDefMsg struct {
 	LegRawSymbol             [MetadataV2_SymbolCstrLen]byte      `json:"leg_raw_symbol" csv:"leg_raw_symbol"`                           // The leg instrument's raw symbol assigned by the publisher.
 	InstrumentClass          byte                                `json:"instrument_class" csv:"instrument_class"`                       // The classification of the instrument.
 	MatchAlgorithm           byte                                `json:"match_algorithm" csv:"match_algorithm"`                         // The matching algorithm used for the instrument, typically **F**IFO.
+	MdSecurityTradingStatus  uint8                               `json:"md_security_trading_status" csv:"md_security_trading_status"`   // The market data security trading status.
 	MainFraction             uint8                               `json:"main_fraction" csv:"main_fraction"`                             // The price denominator of the main fraction.
 	PriceDisplayFormat       uint8                               `json:"price_display_format" csv:"price_display_format"`               // The number of digits to the right of the tick mark, to display fractional prices.
+	SettlPrice_type          uint8                               `json:"settl_price_type" csv:"settl_price_type"`                       // The settlement price type.
 	SubFraction              uint8                               `json:"sub_fraction" csv:"sub_fraction"`                               // The price denominator of the sub fraction.
 	UnderlyingProduct        uint8                               `json:"underlying_product" csv:"underlying_product"`                   // The product complex of the instrument.
 	SecurityUpdateAction     byte                                `json:"security_update_action" csv:"security_update_action"`           // Indicates if the instrument definition has been added, modified, or deleted.
@@ -1022,7 +1026,7 @@ type InstrumentDefMsg struct {
 
 const InstrumentDefMsg_AssetCstrLen = 7
 
-const InstrumentDefMsg_MinSize = RHeader_Size + 358
+const InstrumentDefMsg_MinSize = RHeader_Size + 370
 const InstrumentDefMsg_Size = InstrumentDefMsg_MinSize + 2*MetadataV2_SymbolCstrLen
 
 func (*InstrumentDefMsg) RType() RType {
@@ -1055,43 +1059,45 @@ func (r *InstrumentDefMsg) Fill_RawWithLen(b []byte, symbolLen uint16) error {
 	r.HighLimitPrice = int64(binary.LittleEndian.Uint64(body[40:48]))
 	r.LowLimitPrice = int64(binary.LittleEndian.Uint64(body[48:56]))
 	r.MaxPriceVariation = int64(binary.LittleEndian.Uint64(body[56:64]))
-	r.UnitOfMeasureQty = int64(binary.LittleEndian.Uint64(body[64:72]))
-	r.MinPriceIncrementAmount = int64(binary.LittleEndian.Uint64(body[72:80]))
-	r.PriceRatio = int64(binary.LittleEndian.Uint64(body[80:88]))
-	r.StrikePrice = int64(binary.LittleEndian.Uint64(body[88:96]))
-	r.RawInstrumentID = binary.LittleEndian.Uint64(body[96:104])
-	r.LegPrice = int64(binary.LittleEndian.Uint64(body[104:112]))
-	r.LegDelta = int64(binary.LittleEndian.Uint64(body[112:120]))
-	r.InstAttribValue = int32(binary.LittleEndian.Uint32(body[120:124]))
-	r.UnderlyingID = binary.LittleEndian.Uint32(body[124:128])
-	r.MarketDepthImplied = int32(binary.LittleEndian.Uint32(body[128:132]))
-	r.MarketDepth = int32(binary.LittleEndian.Uint32(body[132:136]))
-	r.MarketSegmentID = binary.LittleEndian.Uint32(body[136:140])
-	r.MaxTradeVol = binary.LittleEndian.Uint32(body[140:144])
-	r.MinLotSize = int32(binary.LittleEndian.Uint32(body[144:148]))
-	r.MinLotSizeBlock = int32(binary.LittleEndian.Uint32(body[148:152]))
-	r.MinLotSizeRoundLot = int32(binary.LittleEndian.Uint32(body[152:156]))
-	r.MinTradeVol = binary.LittleEndian.Uint32(body[156:160])
-	r.ContractMultiplier = int32(binary.LittleEndian.Uint32(body[160:164]))
-	r.DecayQuantity = int32(binary.LittleEndian.Uint32(body[164:168]))
-	r.OriginalContractSize = int32(binary.LittleEndian.Uint32(body[168:172]))
-	r.LegInstrumentID = binary.LittleEndian.Uint32(body[172:176])
-	r.LegRatioPriceNumerator = int32(binary.LittleEndian.Uint32(body[176:180]))
-	r.LegRatioPriceDenominator = int32(binary.LittleEndian.Uint32(body[180:184]))
-	r.LegRatioQtyNumerator = int32(binary.LittleEndian.Uint32(body[184:188]))
-	r.LegRatioQtyDenominator = int32(binary.LittleEndian.Uint32(body[188:192]))
-	r.LegUnderlyingID = binary.LittleEndian.Uint32(body[192:196])
-	r.ApplID = int16(binary.LittleEndian.Uint16(body[196:198]))
-	r.MaturityYear = binary.LittleEndian.Uint16(body[198:200])
-	r.DecayStartDate = binary.LittleEndian.Uint16(body[200:202])
-	r.ChannelID = binary.LittleEndian.Uint16(body[202:204])
-	r.LegCount = binary.LittleEndian.Uint16(body[204:206])
-	r.LegIndex = binary.LittleEndian.Uint16(body[206:208])
-	copy(r.Currency[:], body[208:212])      // byte[4]
-	copy(r.SettlCurrency[:], body[212:216]) // byte[4]
-	copy(r.Secsubtype[:], body[216:222])    // byte[6]
-	symbolEnd := 222 + int(symbolLen)
-	copy(r.RawSymbol[:], body[222:symbolEnd])
+	r.TradingReferencePrice = int64(binary.LittleEndian.Uint64(body[64:72]))
+	r.UnitOfMeasureQty = int64(binary.LittleEndian.Uint64(body[72:80]))
+	r.MinPriceIncrementAmount = int64(binary.LittleEndian.Uint64(body[80:88]))
+	r.PriceRatio = int64(binary.LittleEndian.Uint64(body[88:96]))
+	r.StrikePrice = int64(binary.LittleEndian.Uint64(body[96:104]))
+	r.RawInstrumentID = binary.LittleEndian.Uint64(body[104:112])
+	r.LegPrice = int64(binary.LittleEndian.Uint64(body[112:120]))
+	r.LegDelta = int64(binary.LittleEndian.Uint64(body[120:128]))
+	r.InstAttribValue = int32(binary.LittleEndian.Uint32(body[128:132]))
+	r.UnderlyingID = binary.LittleEndian.Uint32(body[132:136])
+	r.MarketDepthImplied = int32(binary.LittleEndian.Uint32(body[136:140]))
+	r.MarketDepth = int32(binary.LittleEndian.Uint32(body[140:144]))
+	r.MarketSegmentID = binary.LittleEndian.Uint32(body[144:148])
+	r.MaxTradeVol = binary.LittleEndian.Uint32(body[148:152])
+	r.MinLotSize = int32(binary.LittleEndian.Uint32(body[152:156]))
+	r.MinLotSizeBlock = int32(binary.LittleEndian.Uint32(body[156:160]))
+	r.MinLotSizeRoundLot = int32(binary.LittleEndian.Uint32(body[160:164]))
+	r.MinTradeVol = binary.LittleEndian.Uint32(body[164:168])
+	r.ContractMultiplier = int32(binary.LittleEndian.Uint32(body[168:172]))
+	r.DecayQuantity = int32(binary.LittleEndian.Uint32(body[172:176]))
+	r.OriginalContractSize = int32(binary.LittleEndian.Uint32(body[176:180]))
+	r.LegInstrumentID = binary.LittleEndian.Uint32(body[180:184])
+	r.LegRatioPriceNumerator = int32(binary.LittleEndian.Uint32(body[184:188]))
+	r.LegRatioPriceDenominator = int32(binary.LittleEndian.Uint32(body[188:192]))
+	r.LegRatioQtyNumerator = int32(binary.LittleEndian.Uint32(body[192:196]))
+	r.LegRatioQtyDenominator = int32(binary.LittleEndian.Uint32(body[196:200]))
+	r.LegUnderlyingID = binary.LittleEndian.Uint32(body[200:204])
+	r.ApplID = int16(binary.LittleEndian.Uint16(body[204:206]))
+	r.MaturityYear = binary.LittleEndian.Uint16(body[206:208])
+	r.DecayStartDate = binary.LittleEndian.Uint16(body[208:210])
+	r.ChannelID = binary.LittleEndian.Uint16(body[210:212])
+	r.LegCount = binary.LittleEndian.Uint16(body[212:214])
+	r.LegIndex = binary.LittleEndian.Uint16(body[214:216])
+	r.TradingReferenceDate = binary.LittleEndian.Uint16(body[216:218])
+	copy(r.Currency[:], body[218:222])      // byte[4]
+	copy(r.SettlCurrency[:], body[222:226]) // byte[4]
+	copy(r.Secsubtype[:], body[226:232])    // byte[6]
+	symbolEnd := 232 + int(symbolLen)
+	copy(r.RawSymbol[:], body[232:symbolEnd])
 	copy(r.Group[:], body[symbolEnd+0:symbolEnd+21])     // byte[21]
 	copy(r.Exchange[:], body[symbolEnd+21:symbolEnd+26]) // byte[5]
 	copy(r.Asset[:], body[symbolEnd+26:symbolEnd+26+InstrumentDefMsg_AssetCstrLen])
@@ -1104,21 +1110,23 @@ func (r *InstrumentDefMsg) Fill_RawWithLen(b []byte, symbolLen uint16) error {
 	copy(r.LegRawSymbol[:], body[symbolEnd+103:legSymbolEnd])
 	r.InstrumentClass = body[legSymbolEnd+0]
 	r.MatchAlgorithm = body[legSymbolEnd+1]
-	r.MainFraction = body[legSymbolEnd+2]
-	r.PriceDisplayFormat = body[legSymbolEnd+3]
-	r.SubFraction = body[legSymbolEnd+4]
-	r.UnderlyingProduct = body[legSymbolEnd+5]
-	r.SecurityUpdateAction = body[legSymbolEnd+6]
-	r.MaturityMonth = body[legSymbolEnd+7]
-	r.MaturityDay = body[legSymbolEnd+8]
-	r.MaturityWeek = body[legSymbolEnd+9]
-	r.UserDefinedInstrument = body[legSymbolEnd+10]
-	r.ContractMultiplierUnit = int8(body[legSymbolEnd+11])
-	r.FlowScheduleType = int8(body[legSymbolEnd+12])
-	r.TickRule = body[legSymbolEnd+13]
-	r.LegInstrumentClass = body[legSymbolEnd+14]
-	r.LegSide = body[legSymbolEnd+15]
-	copy(r.Reserved[:], body[legSymbolEnd+16:legSymbolEnd+33])
+	r.MdSecurityTradingStatus = body[legSymbolEnd+2]
+	r.MainFraction = body[legSymbolEnd+3]
+	r.PriceDisplayFormat = body[legSymbolEnd+4]
+	r.SettlPrice_type = body[legSymbolEnd+5]
+	r.SubFraction = body[legSymbolEnd+6]
+	r.UnderlyingProduct = body[legSymbolEnd+7]
+	r.SecurityUpdateAction = body[legSymbolEnd+8]
+	r.MaturityMonth = body[legSymbolEnd+9]
+	r.MaturityDay = body[legSymbolEnd+10]
+	r.MaturityWeek = body[legSymbolEnd+11]
+	r.UserDefinedInstrument = body[legSymbolEnd+12]
+	r.ContractMultiplierUnit = int8(body[legSymbolEnd+13])
+	r.FlowScheduleType = int8(body[legSymbolEnd+14])
+	r.TickRule = body[legSymbolEnd+15]
+	r.LegInstrumentClass = body[legSymbolEnd+16]
+	r.LegSide = body[legSymbolEnd+17]
+	copy(r.Reserved[:], body[legSymbolEnd+18:legSymbolEnd+35])
 	return nil
 }
 
@@ -1132,6 +1140,7 @@ func (r *InstrumentDefMsg) Fill_Json(val *fastjson.Value, header *RHeader) error
 	r.HighLimitPrice = fastjson_GetInt64FromString(val, "high_limit_price")
 	r.LowLimitPrice = fastjson_GetInt64FromString(val, "low_limit_price")
 	r.MaxPriceVariation = fastjson_GetInt64FromString(val, "max_price_variation")
+	r.TradingReferencePrice = fastjson_GetInt64FromString(val, "trading_reference_price")
 	r.UnitOfMeasureQty = fastjson_GetInt64FromString(val, "unit_of_measure_qty")
 	r.MinPriceIncrementAmount = fastjson_GetInt64FromString(val, "min_price_increment_amount")
 	r.PriceRatio = fastjson_GetInt64FromString(val, "price_ratio")
@@ -1164,6 +1173,7 @@ func (r *InstrumentDefMsg) Fill_Json(val *fastjson.Value, header *RHeader) error
 	r.ChannelID = uint16(val.GetUint("channel_id"))
 	r.LegCount = uint16(val.GetUint("leg_count"))
 	r.LegIndex = uint16(val.GetUint("leg_index"))
+	r.TradingReferenceDate = uint16(val.GetUint("trading_reference_date"))
 	copy(r.Currency[:], val.GetStringBytes("currency"))
 	copy(r.SettlCurrency[:], val.GetStringBytes("settl_currency"))
 	copy(r.Secsubtype[:], val.GetStringBytes("secsubtype"))
@@ -1179,8 +1189,10 @@ func (r *InstrumentDefMsg) Fill_Json(val *fastjson.Value, header *RHeader) error
 	copy(r.LegRawSymbol[:], val.GetStringBytes("leg_raw_symbol"))
 	r.InstrumentClass = byte(val.GetUint("instrument_class"))
 	r.MatchAlgorithm = byte(val.GetUint("match_algorithm"))
+	r.MdSecurityTradingStatus = uint8(val.GetUint("md_security_trading_status"))
 	r.MainFraction = uint8(val.GetUint("main_fraction"))
 	r.PriceDisplayFormat = uint8(val.GetUint("price_display_format"))
+	r.SettlPrice_type = uint8(val.GetUint("settl_price_type"))
 	r.SubFraction = uint8(val.GetUint("sub_fraction"))
 	r.UnderlyingProduct = uint8(val.GetUint("underlying_product"))
 	r.SecurityUpdateAction = byte(val.GetUint("security_update_action"))
