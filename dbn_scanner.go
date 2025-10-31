@@ -4,6 +4,7 @@ package dbn
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 )
 
@@ -130,6 +131,7 @@ func (s *DbnScanner) Next() bool {
 func DbnScannerDecode[R Record, RP RecordPtr[R]](s *DbnScanner) (*R, error) {
 	// Ensure there's a record to decode
 	if s.lastSize <= RHeader_Size {
+		fmt.Println(s.lastSize, RHeader_Size)
 		return nil, ErrNoRecord
 	}
 	recordLen := 4 * int(s.lastRecord[0])
