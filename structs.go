@@ -944,82 +944,76 @@ func (r *StatusMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// InstrumentDefMsg is a statistics message. A catchall for various data disseminated by publishers.
-// The [`stat_type`](Self::stat_type) indicates the statistic contained in the message.
+// InstrumentDefMsg is an instrument definition message conforming to Databento's InstrumentDefMsgV2 format.
 // This is not a strict byte-layout because RawSymbol has dynamic length that depends on metadata's SymbolCstrLen.
 type InstrumentDefMsg struct {
-	Header                  RHeader                        `json:"hd" csv:"hd"`                                                 // The common header.
-	TsRecv                  uint64                         `json:"ts_recv" csv:"ts_recv"`                                       // The capture-server-received timestamp expressed as the number of nanoseconds since the UNIX epoch.
-	MinPriceIncrement       int64                          `json:"min_price_increment" csv:"min_price_increment"`               // Fixed price The minimum constant tick for the instrument in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	DisplayFactor           int64                          `json:"display_factor" csv:"display_factor"`                         // The multiplier to convert the venue’s display price to the conventional price, in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	Expiration              uint64                         `json:"expiration" csv:"expiration"`                                 // The last eligible trade time expressed as a number of nanoseconds since the UNIX epoch. Will be [`crate::UNDEF_TIMESTAMP`] when null, such as for equities.
-	Activation              uint64                         `json:"activation" csv:"activation"`                                 // The time of instrument activation expressed as a number of nanoseconds since the UNIX epoch. Will be [`crate::UNDEF_TIMESTAMP`] when null, such as for equities.
-	HighLimitPrice          int64                          `json:"high_limit_price" csv:"high_limit_price"`                     // The allowable high limit price for the trading day in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	LowLimitPrice           int64                          `json:"low_limit_price" csv:"low_limit_price"`                       // The allowable low limit price for the trading day in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	MaxPriceVariation       int64                          `json:"max_price_variation" csv:"max_price_variation"`               // The differential value for price banding in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	TradingReferencePrice   int64                          `json:"trading_reference_price" csv:"trading_reference_price"`       // The trading session settlement price on `trading_reference_date`.
-	UnitOfMeasureQty        int64                          `json:"unit_of_measure_qty" csv:"unit_of_measure_qty"`               // The contract size for each instrument, in combination with `unit_of_measure`, in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	MinPriceIncrementAmount int64                          `json:"min_price_increment_amount" csv:"min_price_increment_amount"` // The value currently under development by the venue. Converted to units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	PriceRatio              int64                          `json:"price_ratio" csv:"price_ratio"`                               // The value used for price calculation in spread and leg pricing in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	StrikePrice             int64                          `json:"strike_price" csv:"strike_price"`                             // The strike price of the option. Converted to units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	InstAttribValue         int32                          `json:"inst_attrib_value" csv:"inst_attrib_value"`                   // A bitmap of instrument eligibility attributes.
-	UnderlyingID            uint32                         `json:"underlying_id" csv:"underlying_id"`                           // The `instrument_id` of the first underlying instrument.
-	RawInstrumentID         uint32                         `json:"raw_instrument_id" csv:"raw_instrument_id"`                   // The instrument ID assigned by the publisher. May be the same as `instrument_id`.
-	MarketDepthImplied      int32                          `json:"market_depth_implied" csv:"market_depth_implied"`             // The implied book depth on the price level data feed.
-	MarketDepth             int32                          `json:"market_depth" csv:"market_depth"`                             // The (outright) book depth on the price level data feed.
-	MarketSegmentID         uint32                         `json:"market_segment_id" csv:"market_segment_id"`                   // The market segment of the instrument.
-	MaxTradeVol             uint32                         `json:"max_trade_vol" csv:"max_trade_vol"`                           // The maximum trading volume for the instrument.
-	MinLotSize              int32                          `json:"min_lot_size" csv:"min_lot_size"`                             // The minimum order entry quantity for the instrument.
-	MinLotSizeBlock         int32                          `json:"min_lot_size_block" csv:"min_lot_size_block"`                 // The minimum quantity required for a block trade of the instrument.
-	MinLotSizeRoundLot      int32                          `json:"min_lot_size_round_lot" csv:"min_lot_size_round_lot"`         // The minimum quantity required for a round lot of the instrument. Multiples of this quantity are also round lots.
-	MinTradeVol             uint32                         `json:"min_trade_vol" csv:"min_trade_vol"`                           // The minimum trading volume for the instrument.
-	ContractMultiplier      int32                          `json:"contract_multiplier" csv:"contract_multiplier"`               // The number of deliverables per instrument, i.e. peak days.
-	DecayQuantity           int32                          `json:"decay_quantity" csv:"decay_quantity"`                         // The quantity that a contract will decay daily, after `decay_start_date` has been reached.
-	OriginalContractSize    int32                          `json:"original_contract_size" csv:"original_contract_size"`         // The fixed contract value assigned to each instrument.
-	TradingReferenceDate    uint16                         `json:"trading_reference_date" csv:"trading_reference_date"`         // The trading session date corresponding to the settlement price in  `trading_reference_price`, in number of days since the UNIX epoch.
-	ApplID                  int16                          `json:"appl_id" csv:"appl_id"`                                       // The channel ID assigned at the venue.
-	MaturityYear            uint16                         `json:"maturity_year" csv:"maturity_year"`                           // The calendar year reflected in the instrument symbol.
-	DecayStartDate          uint16                         `json:"decay_start_date" csv:"decay_start_date"`                     // The date at which a contract will begin to decay.
-	ChannelID               uint16                         `json:"channel_id" csv:"channel_id"`                                 // The channel ID assigned by Databento as an incrementing integer starting at zero.
-	Currency                [4]byte                        `json:"currency" csv:"currency"`                                     // The currency used for price fields.
-	SettlCurrency           [4]byte                        `json:"settl_currency" csv:"settl_currency"`                         // The currency used for settlement, if different from `currency`.
-	Secsubtype              [6]byte                        `json:"secsubtype" csv:"secsubtype"`                                 // The strategy type of the spread.
-	RawSymbol               [MetadataV2_SymbolCstrLen]byte `json:"raw_symbol" csv:"raw_symbol"`                                 // The instrument raw symbol assigned by the publisher.
-	Group                   [21]byte                       `json:"group" csv:"group"`                                           // The security group code of the instrument.
-	Exchange                [5]byte                        `json:"exchange" csv:"exchange"`                                     // The exchange used to identify the instrument.
-	Asset                   [7]byte                        `json:"asset" csv:"asset"`                                           // The underlying asset code (product code) of the instrument.
-	Cfi                     [7]byte                        `json:"cfi" csv:"cfi"`                                               // The ISO standard instrument categorization code.
-	SecurityType            [7]byte                        `json:"security_type" csv:"security_type"`                           // The type of the instrument, e.g. FUT for future or future spread.
-	UnitOfMeasure           [31]byte                       `json:"unit_of_measure" csv:"unit_of_measure"`                       // The unit of measure for the instrument’s original contract size, e.g. USD or LBS.
-	Underlying              [21]byte                       `json:"underlying" csv:"underlying"`                                 // The symbol of the first underlying instrument.
-	StrikePriceCurrency     [4]byte                        `json:"strike_price_currency" csv:"strike_price_currency"`           // The currency of [`strike_price`](Self::strike_price).
-	InstrumentClass         byte                           `json:"instrument_class" csv:"instrument_class"`                     // The classification of the instrument.
-	MatchAlgorithm          byte                           `json:"match_algorithm" csv:"match_algorithm"`                       // The matching algorithm used for the instrument, typically **F**IFO.
-	MdSecurityTradingStatus uint8                          `json:"md_security_trading_status" csv:"md_security_trading_status"` // The current trading state of the instrument.
-	MainFraction            uint8                          `json:"main_fraction" csv:"main_fraction"`                           // The price denominator of the main fraction.
-	PriceDisplayFormat      uint8                          `json:"price_display_format" csv:"price_display_format"`             // The number of digits to the right of the tick mark, to display fractional prices.
-	SettlPrice_type         uint8                          `json:"settl_price_type" csv:"settl_price_type"`                     // The type indicators for the settlement price, as a bitmap.
-	SubFraction             uint8                          `json:"sub_fraction" csv:"sub_fraction"`                             // The price denominator of the sub fraction.
-	UnderlyingProduct       uint8                          `json:"underlying_product" csv:"underlying_product"`                 // The product complex of the instrument.
-	SecurityUpdateAction    byte                           `json:"security_update_action" csv:"security_update_action"`         // Indicates if the instrument definition has been added, modified, or deleted.
-	MaturityMonth           uint8                          `json:"maturity_month" csv:"maturity_month"`                         // The calendar month reflected in the instrument symbol.
-	MaturityDay             uint8                          `json:"maturity_day" csv:"maturity_day"`                             // The calendar day reflected in the instrument symbol, or 0.
-	MaturityWeek            uint8                          `json:"maturity_week" csv:"maturity_week"`                           // The calendar week reflected in the instrument symbol, or 0.
-	UserDefinedInstrument   UserDefinedInstrument          `json:"user_defined_instrument" csv:"user_defined_instrument"`       // Indicates if the instrument is user defined: **Y**es or **N**o.
-	ContractMultiplierUnit  int8                           `json:"contract_multiplier_unit" csv:"contract_multiplier_unit"`     // The type of `contract_multiplier`. Either `1` for hours, or `2` for days.
-	FlowScheduleType        int8                           `json:"flow_schedule_type" csv:"flow_schedule_type"`                 // The schedule for delivering electricity.
-	TickRule                uint8                          `json:"tick_rule" csv:"tick_rule"`                                   // The tick rule of the spread.
+	Header                  RHeader                             `json:"hd" csv:"hd"`                                                 // The common header.
+	TsRecv                  uint64                              `json:"ts_recv" csv:"ts_recv"`                                       // The capture-server-received timestamp expressed as the number of nanoseconds since the UNIX epoch.
+	MinPriceIncrement       int64                               `json:"min_price_increment" csv:"min_price_increment"`               // Fixed price The minimum constant tick for the instrument in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
+	DisplayFactor           int64                               `json:"display_factor" csv:"display_factor"`                         // The multiplier to convert the venue’s display price to the conventional price, in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
+	Expiration              uint64                              `json:"expiration" csv:"expiration"`                                 // The last eligible trade time expressed as a number of nanoseconds since the UNIX epoch. Will be [`crate::UNDEF_TIMESTAMP`] when null, such as for equities.
+	Activation              uint64                              `json:"activation" csv:"activation"`                                 // The time of instrument activation expressed as a number of nanoseconds since the UNIX epoch. Will be [`crate::UNDEF_TIMESTAMP`] when null, such as for equities.
+	HighLimitPrice          int64                               `json:"high_limit_price" csv:"high_limit_price"`                     // The allowable high limit price for the trading day in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
+	LowLimitPrice           int64                               `json:"low_limit_price" csv:"low_limit_price"`                       // The allowable low limit price for the trading day in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
+	MaxPriceVariation       int64                               `json:"max_price_variation" csv:"max_price_variation"`               // The differential value for price banding in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
+	TradingReferencePrice   int64                               `json:"trading_reference_price" csv:"trading_reference_price"`       // The trading session settlement price on `trading_reference_date`.
+	UnitOfMeasureQty        int64                               `json:"unit_of_measure_qty" csv:"unit_of_measure_qty"`               // The contract size for each instrument, in combination with `unit_of_measure`, in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
+	MinPriceIncrementAmount int64                               `json:"min_price_increment_amount" csv:"min_price_increment_amount"` // The value currently under development by the venue. Converted to units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
+	PriceRatio              int64                               `json:"price_ratio" csv:"price_ratio"`                               // The value used for price calculation in spread and leg pricing in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
+	StrikePrice             int64                               `json:"strike_price" csv:"strike_price"`                             // The strike price of the option. Converted to units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
+	InstAttribValue         int32                               `json:"inst_attrib_value" csv:"inst_attrib_value"`                   // A bitmap of instrument eligibility attributes.
+	UnderlyingID            uint32                              `json:"underlying_id" csv:"underlying_id"`                           // The `instrument_id` of the first underlying instrument.
+	RawInstrumentID         uint32                              `json:"raw_instrument_id" csv:"raw_instrument_id"`                   // The instrument ID assigned by the publisher. May be the same as `instrument_id`.
+	MarketDepthImplied      int32                               `json:"market_depth_implied" csv:"market_depth_implied"`             // The implied book depth on the price level data feed.
+	MarketDepth             int32                               `json:"market_depth" csv:"market_depth"`                             // The (outright) book depth on the price level data feed.
+	MarketSegmentID         uint32                              `json:"market_segment_id" csv:"market_segment_id"`                   // The market segment of the instrument.
+	MaxTradeVol             uint32                              `json:"max_trade_vol" csv:"max_trade_vol"`                           // The maximum trading volume for the instrument.
+	MinLotSize              int32                               `json:"min_lot_size" csv:"min_lot_size"`                             // The minimum order entry quantity for the instrument.
+	MinLotSizeBlock         int32                               `json:"min_lot_size_block" csv:"min_lot_size_block"`                 // The minimum quantity required for a block trade of the instrument.
+	MinLotSizeRoundLot      int32                               `json:"min_lot_size_round_lot" csv:"min_lot_size_round_lot"`         // The minimum quantity required for a round lot of the instrument. Multiples of this quantity are also round lots.
+	MinTradeVol             uint32                              `json:"min_trade_vol" csv:"min_trade_vol"`                           // The minimum trading volume for the instrument.
+	ContractMultiplier      int32                               `json:"contract_multiplier" csv:"contract_multiplier"`               // The number of deliverables per instrument, i.e. peak days.
+	DecayQuantity           int32                               `json:"decay_quantity" csv:"decay_quantity"`                         // The quantity that a contract will decay daily, after `decay_start_date` has been reached.
+	OriginalContractSize    int32                               `json:"original_contract_size" csv:"original_contract_size"`         // The fixed contract value assigned to each instrument.
+	TradingReferenceDate    uint16                              `json:"trading_reference_date" csv:"trading_reference_date"`         // The trading session date corresponding to the settlement price in  `trading_reference_price`, in number of days since the UNIX epoch.
+	ApplID                  int16                               `json:"appl_id" csv:"appl_id"`                                       // The channel ID assigned at the venue.
+	MaturityYear            uint16                              `json:"maturity_year" csv:"maturity_year"`                           // The calendar year reflected in the instrument symbol.
+	DecayStartDate          uint16                              `json:"decay_start_date" csv:"decay_start_date"`                     // The date at which a contract will begin to decay.
+	ChannelID               uint16                              `json:"channel_id" csv:"channel_id"`                                 // The channel ID assigned by Databento as an incrementing integer starting at zero.
+	Currency                [4]byte                             `json:"currency" csv:"currency"`                                     // The currency used for price fields.
+	SettlCurrency           [4]byte                             `json:"settl_currency" csv:"settl_currency"`                         // The currency used for settlement, if different from `currency`.
+	Secsubtype              [6]byte                             `json:"secsubtype" csv:"secsubtype"`                                 // The strategy type of the spread.
+	RawSymbol               [MetadataV2_SymbolCstrLen]byte      `json:"raw_symbol" csv:"raw_symbol"`                                 // The instrument raw symbol assigned by the publisher.
+	Group                   [21]byte                            `json:"group" csv:"group"`                                           // The security group code of the instrument.
+	Exchange                [5]byte                             `json:"exchange" csv:"exchange"`                                     // The exchange used to identify the instrument.
+	Asset                   [InstrumentDefMsg_AssetCstrLen]byte `json:"asset" csv:"asset"`                                           // The underlying asset code (product code) of the instrument.
+	Cfi                     [7]byte                             `json:"cfi" csv:"cfi"`                                               // The ISO standard instrument categorization code.
+	SecurityType            [7]byte                             `json:"security_type" csv:"security_type"`                           // The type of the instrument, e.g. FUT for future or future spread.
+	UnitOfMeasure           [31]byte                            `json:"unit_of_measure" csv:"unit_of_measure"`                       // The unit of measure for the instrument’s original contract size, e.g. USD or LBS.
+	Underlying              [21]byte                            `json:"underlying" csv:"underlying"`                                 // The symbol of the first underlying instrument.
+	StrikePriceCurrency     [4]byte                             `json:"strike_price_currency" csv:"strike_price_currency"`           // The currency of [`strike_price`](Self::strike_price).
+	InstrumentClass         byte                                `json:"instrument_class" csv:"instrument_class"`                     // The classification of the instrument.
+	MatchAlgorithm          byte                                `json:"match_algorithm" csv:"match_algorithm"`                       // The matching algorithm used for the instrument, typically **F**IFO.
+	MdSecurityTradingStatus uint8                               `json:"md_security_trading_status" csv:"md_security_trading_status"` // The current trading state of the instrument.
+	MainFraction            uint8                               `json:"main_fraction" csv:"main_fraction"`                           // The price denominator of the main fraction.
+	PriceDisplayFormat      uint8                               `json:"price_display_format" csv:"price_display_format"`             // The number of digits to the right of the tick mark, to display fractional prices.
+	SettlPrice_type         uint8                               `json:"settl_price_type" csv:"settl_price_type"`                     // The type indicators for the settlement price, as a bitmap.
+	SubFraction             uint8                               `json:"sub_fraction" csv:"sub_fraction"`                             // The price denominator of the sub fraction.
+	UnderlyingProduct       uint8                               `json:"underlying_product" csv:"underlying_product"`                 // The product complex of the instrument.
+	SecurityUpdateAction    byte                                `json:"security_update_action" csv:"security_update_action"`         // Indicates if the instrument definition has been added, modified, or deleted.
+	MaturityMonth           uint8                               `json:"maturity_month" csv:"maturity_month"`                         // The calendar month reflected in the instrument symbol.
+	MaturityDay             uint8                               `json:"maturity_day" csv:"maturity_day"`                             // The calendar day reflected in the instrument symbol, or 0.
+	MaturityWeek            uint8                               `json:"maturity_week" csv:"maturity_week"`                           // The calendar week reflected in the instrument symbol, or 0.
+	UserDefinedInstrument   UserDefinedInstrument               `json:"user_defined_instrument" csv:"user_defined_instrument"`       // Indicates if the instrument is user defined: **Y**es or **N**o.
+	ContractMultiplierUnit  int8                                `json:"contract_multiplier_unit" csv:"contract_multiplier_unit"`     // The type of `contract_multiplier`. Either `1` for hours, or `2` for days.
+	FlowScheduleType        int8                                `json:"flow_schedule_type" csv:"flow_schedule_type"`                 // The schedule for delivering electricity.
+	TickRule                uint8                               `json:"tick_rule" csv:"tick_rule"`                                   // The tick rule of the spread.
+	Reserved                [10]byte                            `json:"_reserved,omitempty" csv:"_reserved"`                         // Reserved for future usage.
 }
 
-// Minimum size of InstrumentDefMsg, the size with 0-length c-strings
-// We add 1*SymbolCstrLength to it to get actual size.
-// const InstrumentDefMsg_MinSize = RHeader_Size + 384 // TODO: count
-//
-//	func (*InstrumentDefMsg) RSize(cstrLength uint16) uint16 {
-//		return InstrumentDefMsg_MinSize + 2*cstrLength
-//	}
+const InstrumentDefMsg_AssetCstrLen = 7
 
-const InstrumentDefMsg_MinSize = RHeader_Size + 303
+const InstrumentDefMsg_MinSize = RHeader_Size + 313
 const InstrumentDefMsg_Size = InstrumentDefMsg_MinSize + MetadataV2_SymbolCstrLen
 
 func (*InstrumentDefMsg) RType() RType {
@@ -1081,9 +1075,9 @@ func (r *InstrumentDefMsg) Fill_RawWithLen(b []byte, symbolLen uint16) error {
 	copy(r.Secsubtype[:], body[178:184])    // byte[6]
 	symbolEnd := 184 + int(symbolLen)
 	copy(r.RawSymbol[:], body[184:symbolEnd])
-	copy(r.Group[:], body[symbolEnd+0:symbolEnd+21])                 // byte[21]
-	copy(r.Exchange[:], body[symbolEnd+21:symbolEnd+26])             // byte[5]
-	copy(r.Asset[:], body[symbolEnd+26:symbolEnd+33])                // byte[7]
+	copy(r.Group[:], body[symbolEnd+0:symbolEnd+21])     // byte[21]
+	copy(r.Exchange[:], body[symbolEnd+21:symbolEnd+26]) // byte[5]
+	copy(r.Asset[:], body[symbolEnd+26:symbolEnd+26+InstrumentDefMsg_AssetCstrLen])
 	copy(r.Cfi[:], body[symbolEnd+33:symbolEnd+40])                  // byte[7]
 	copy(r.SecurityType[:], body[symbolEnd+40:symbolEnd+47])         // byte[7]
 	copy(r.UnitOfMeasure[:], body[symbolEnd+47:symbolEnd+78])        // byte[31]
@@ -1105,6 +1099,7 @@ func (r *InstrumentDefMsg) Fill_RawWithLen(b []byte, symbolLen uint16) error {
 	r.ContractMultiplierUnit = int8(body[symbolEnd+116])
 	r.FlowScheduleType = int8(body[symbolEnd+117])
 	r.TickRule = body[symbolEnd+118]
+	copy(r.Reserved[:], body[symbolEnd+119:symbolEnd+129])
 	return nil
 }
 
