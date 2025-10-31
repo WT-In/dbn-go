@@ -21,6 +21,7 @@ package dbn
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 
 	"github.com/valyala/fastjson"
 	"github.com/valyala/fastjson/fastfloat"
@@ -1042,6 +1043,8 @@ func (r *InstrumentDefMsg) Fill_Raw(b []byte) error {
 }
 
 func (r *InstrumentDefMsg) Fill_RawWithLen(b []byte, symbolLen uint16) error {
+	fmt.Println("symbolLen", symbolLen)
+	fmt.Println("len(b)", len(b))
 	if len(b) < InstrumentDefMsg_Size {
 		return unexpectedBytesError(len(b), InstrumentDefMsg_Size)
 	}
