@@ -1042,9 +1042,8 @@ func (r *InstrumentDefMsg) Fill_Raw(b []byte) error {
 }
 
 func (r *InstrumentDefMsg) Fill_RawWithLen(b []byte, symbolLen uint16) error {
-	expectedSize := InstrumentDefMsg_MinSize + 2*int(symbolLen)
-	if len(b) < expectedSize {
-		return unexpectedBytesError(len(b), expectedSize)
+	if len(b) < InstrumentDefMsg_Size {
+		return unexpectedBytesError(len(b), InstrumentDefMsg_Size)
 	}
 	err := r.Header.Fill_Raw(b[0:RHeader_Size])
 	if err != nil {
