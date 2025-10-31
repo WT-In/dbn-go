@@ -1027,7 +1027,7 @@ type InstrumentDefMsg struct {
 const InstrumentDefMsg_AssetCstrLen = 7
 
 const InstrumentDefMsg_MinSize = RHeader_Size + 370
-const InstrumentDefMsg_Size = InstrumentDefMsg_MinSize + 2*MetadataV2_SymbolCstrLen
+const InstrumentDefMsg_Size = 528
 
 func (*InstrumentDefMsg) RType() RType {
 	return RType_InstrumentDef
