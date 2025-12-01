@@ -100,7 +100,7 @@ func databentoPostFormRequest(urlStr string, apiKey string, form url.Values, acc
 	}
 	defer resp.Body.Close()
 
-	badStatusCode := (resp.StatusCode != http.StatusOK)
+	badStatusCode := (resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
