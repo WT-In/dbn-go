@@ -21,7 +21,6 @@ package dbn
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 
 	"github.com/valyala/fastjson"
 	"github.com/valyala/fastjson/fastfloat"
@@ -1043,8 +1042,103 @@ func (r *InstrumentDefMsg) Fill_Raw(b []byte) error {
 }
 
 func (r *InstrumentDefMsg) Fill_RawWithLen(b []byte, symbolLen uint16) error {
-	fmt.Println("symbolLen", symbolLen)
-	fmt.Println("len(b)", len(b))
+	// V1 (symbolLen=22) has different layout - no leg_raw_symbol field
+	if symbolLen == MetadataV1_SymbolCstrLen {
+		return r.fillRawV1(b, symbolLen)
+	}
+	// V2/V3 layout (symbolLen=71)
+	return r.fillRawV2(b, symbolLen)
+}
+
+// fillRawV1 parses DBN V1 InstrumentDefMsg (no leg_raw_symbol)
+func (r *InstrumentDefMsg) fillRawV1(b []byte, symbolLen uint16) error {
+	// V1 minimum size check (smaller than V2/V3 due to no leg_raw_symbol)
+	minSize := 360 // approximate V1 size
+	if len(b) < minSize {
+		return unexpectedBytesError(len(b), minSize)
+	}
+	err := r.Header.Fill_Raw(b[0:RHeader_Size])
+	if err != nil {
+		return err
+	}
+	body := b[RHeader_Size:]
+	r.TsRecv = binary.LittleEndian.Uint64(body[0:8])
+	r.MinPriceIncrement = int64(binary.LittleEndian.Uint64(body[8:16]))
+	r.DisplayFactor = int64(binary.LittleEndian.Uint64(body[16:24]))
+	r.Expiration = binary.LittleEndian.Uint64(body[24:32])
+	r.Activation = binary.LittleEndian.Uint64(body[32:40])
+	r.HighLimitPrice = int64(binary.LittleEndian.Uint64(body[40:48]))
+	r.LowLimitPrice = int64(binary.LittleEndian.Uint64(body[48:56]))
+	r.MaxPriceVariation = int64(binary.LittleEndian.Uint64(body[56:64]))
+	r.TradingReferencePrice = int64(binary.LittleEndian.Uint64(body[64:72]))
+	r.UnitOfMeasureQty = int64(binary.LittleEndian.Uint64(body[72:80]))
+	r.MinPriceIncrementAmount = int64(binary.LittleEndian.Uint64(body[80:88]))
+	r.PriceRatio = int64(binary.LittleEndian.Uint64(body[88:96]))
+	// V1: inst_attrib_value is at offset 96, raw_instrument_id is u32
+	r.InstAttribValue = int32(binary.LittleEndian.Uint32(body[96:100]))
+	r.UnderlyingID = binary.LittleEndian.Uint32(body[100:104])
+	r.RawInstrumentID = uint64(binary.LittleEndian.Uint32(body[104:108])) // u32 in V1
+	r.MarketDepthImplied = int32(binary.LittleEndian.Uint32(body[108:112]))
+	r.MarketDepth = int32(binary.LittleEndian.Uint32(body[112:116]))
+	r.MarketSegmentID = binary.LittleEndian.Uint32(body[116:120])
+	r.MaxTradeVol = binary.LittleEndian.Uint32(body[120:124])
+	r.MinLotSize = int32(binary.LittleEndian.Uint32(body[124:128]))
+	r.MinLotSizeBlock = int32(binary.LittleEndian.Uint32(body[128:132]))
+	r.MinLotSizeRoundLot = int32(binary.LittleEndian.Uint32(body[132:136]))
+	r.MinTradeVol = binary.LittleEndian.Uint32(body[136:140])
+	// _reserved2: 4 bytes at 140:144
+	r.ContractMultiplier = int32(binary.LittleEndian.Uint32(body[144:148]))
+	r.DecayQuantity = int32(binary.LittleEndian.Uint32(body[148:152]))
+	r.OriginalContractSize = int32(binary.LittleEndian.Uint32(body[152:156]))
+	// _reserved3: 4 bytes at 156:160
+	r.TradingReferenceDate = binary.LittleEndian.Uint16(body[160:162])
+	r.ApplID = int16(binary.LittleEndian.Uint16(body[162:164]))
+	r.MaturityYear = binary.LittleEndian.Uint16(body[164:166])
+	r.DecayStartDate = binary.LittleEndian.Uint16(body[166:168])
+	r.ChannelID = binary.LittleEndian.Uint16(body[168:170])
+	copy(r.Currency[:], body[170:174])
+	copy(r.SettlCurrency[:], body[174:178])
+	copy(r.Secsubtype[:], body[178:184])
+	symbolEnd := 184 + int(symbolLen)
+	copy(r.RawSymbol[:], body[184:symbolEnd])
+	copy(r.Group[:], body[symbolEnd:symbolEnd+21])
+	copy(r.Exchange[:], body[symbolEnd+21:symbolEnd+26])
+	copy(r.Asset[:], body[symbolEnd+26:symbolEnd+33])
+	copy(r.Cfi[:], body[symbolEnd+33:symbolEnd+40])
+	copy(r.SecurityType[:], body[symbolEnd+40:symbolEnd+47])
+	copy(r.UnitOfMeasure[:], body[symbolEnd+47:symbolEnd+78])
+	copy(r.Underlying[:], body[symbolEnd+78:symbolEnd+99])
+	copy(r.StrikePriceCurrency[:], body[symbolEnd+99:symbolEnd+103])
+	// V1: instrument_class comes right after strike_price_currency (no leg_raw_symbol)
+	pos := symbolEnd + 103
+	r.InstrumentClass = body[pos]
+	// _reserved4: 2 bytes
+	pos += 3
+	r.StrikePrice = int64(binary.LittleEndian.Uint64(body[pos : pos+8]))
+	pos += 8
+	// _reserved5: 6 bytes
+	pos += 6
+	r.MatchAlgorithm = body[pos]
+	r.MdSecurityTradingStatus = body[pos+1]
+	r.MainFraction = body[pos+2]
+	r.PriceDisplayFormat = body[pos+3]
+	r.SettlPrice_type = body[pos+4]
+	r.SubFraction = body[pos+5]
+	r.UnderlyingProduct = body[pos+6]
+	r.SecurityUpdateAction = body[pos+7]
+	r.MaturityMonth = body[pos+8]
+	r.MaturityDay = body[pos+9]
+	r.MaturityWeek = body[pos+10]
+	r.UserDefinedInstrument = body[pos+11]
+	r.ContractMultiplierUnit = int8(body[pos+12])
+	r.FlowScheduleType = int8(body[pos+13])
+	r.TickRule = body[pos+14]
+	// V1 has no leg fields at the end
+	return nil
+}
+
+// fillRawV2 parses DBN V2 InstrumentDefMsg (also no leg_raw_symbol - only V3 has it)
+func (r *InstrumentDefMsg) fillRawV2(b []byte, symbolLen uint16) error {
 	if len(b) < InstrumentDefMsg_Size {
 		return unexpectedBytesError(len(b), InstrumentDefMsg_Size)
 	}
@@ -1052,7 +1146,7 @@ func (r *InstrumentDefMsg) Fill_RawWithLen(b []byte, symbolLen uint16) error {
 	if err != nil {
 		return err
 	}
-	body := b[RHeader_Size:] // slice of just the body
+	body := b[RHeader_Size:]
 	r.TsRecv = binary.LittleEndian.Uint64(body[0:8])
 	r.MinPriceIncrement = int64(binary.LittleEndian.Uint64(body[8:16]))
 	r.DisplayFactor = int64(binary.LittleEndian.Uint64(body[16:24]))
@@ -1066,69 +1160,57 @@ func (r *InstrumentDefMsg) Fill_RawWithLen(b []byte, symbolLen uint16) error {
 	r.MinPriceIncrementAmount = int64(binary.LittleEndian.Uint64(body[80:88]))
 	r.PriceRatio = int64(binary.LittleEndian.Uint64(body[88:96]))
 	r.StrikePrice = int64(binary.LittleEndian.Uint64(body[96:104]))
-	r.RawInstrumentID = binary.LittleEndian.Uint64(body[104:112])
-	r.LegPrice = int64(binary.LittleEndian.Uint64(body[112:120]))
-	r.LegDelta = int64(binary.LittleEndian.Uint64(body[120:128]))
-	r.InstAttribValue = int32(binary.LittleEndian.Uint32(body[128:132]))
-	r.UnderlyingID = binary.LittleEndian.Uint32(body[132:136])
-	r.MarketDepthImplied = int32(binary.LittleEndian.Uint32(body[136:140]))
-	r.MarketDepth = int32(binary.LittleEndian.Uint32(body[140:144]))
-	r.MarketSegmentID = binary.LittleEndian.Uint32(body[144:148])
-	r.MaxTradeVol = binary.LittleEndian.Uint32(body[148:152])
-	r.MinLotSize = int32(binary.LittleEndian.Uint32(body[152:156]))
-	r.MinLotSizeBlock = int32(binary.LittleEndian.Uint32(body[156:160]))
-	r.MinLotSizeRoundLot = int32(binary.LittleEndian.Uint32(body[160:164]))
-	r.MinTradeVol = binary.LittleEndian.Uint32(body[164:168])
-	r.ContractMultiplier = int32(binary.LittleEndian.Uint32(body[168:172]))
-	r.DecayQuantity = int32(binary.LittleEndian.Uint32(body[172:176]))
-	r.OriginalContractSize = int32(binary.LittleEndian.Uint32(body[176:180]))
-	r.LegInstrumentID = binary.LittleEndian.Uint32(body[180:184])
-	r.LegRatioPriceNumerator = int32(binary.LittleEndian.Uint32(body[184:188]))
-	r.LegRatioPriceDenominator = int32(binary.LittleEndian.Uint32(body[188:192]))
-	r.LegRatioQtyNumerator = int32(binary.LittleEndian.Uint32(body[192:196]))
-	r.LegRatioQtyDenominator = int32(binary.LittleEndian.Uint32(body[196:200]))
-	r.LegUnderlyingID = binary.LittleEndian.Uint32(body[200:204])
-	r.ApplID = int16(binary.LittleEndian.Uint16(body[204:206]))
-	r.MaturityYear = binary.LittleEndian.Uint16(body[206:208])
-	r.DecayStartDate = binary.LittleEndian.Uint16(body[208:210])
-	r.ChannelID = binary.LittleEndian.Uint16(body[210:212])
-	r.LegCount = binary.LittleEndian.Uint16(body[212:214])
-	r.LegIndex = binary.LittleEndian.Uint16(body[214:216])
-	r.TradingReferenceDate = binary.LittleEndian.Uint16(body[216:218])
-	copy(r.Currency[:], body[218:222])      // byte[4]
-	copy(r.SettlCurrency[:], body[222:226]) // byte[4]
-	copy(r.Secsubtype[:], body[226:232])    // byte[6]
-	symbolEnd := 232 + int(symbolLen)
-	copy(r.RawSymbol[:], body[232:symbolEnd])
-	copy(r.Group[:], body[symbolEnd+0:symbolEnd+21])     // byte[21]
-	copy(r.Exchange[:], body[symbolEnd+21:symbolEnd+26]) // byte[5]
-	copy(r.Asset[:], body[symbolEnd+26:symbolEnd+26+InstrumentDefMsg_AssetCstrLen])
-	copy(r.Cfi[:], body[symbolEnd+33:symbolEnd+40])                  // byte[7]
-	copy(r.SecurityType[:], body[symbolEnd+40:symbolEnd+47])         // byte[7]
-	copy(r.UnitOfMeasure[:], body[symbolEnd+47:symbolEnd+78])        // byte[31]
-	copy(r.Underlying[:], body[symbolEnd+78:symbolEnd+99])           // byte[21]
-	copy(r.StrikePriceCurrency[:], body[symbolEnd+99:symbolEnd+103]) // byte[4]
-	legSymbolEnd := symbolEnd + 103 + int(symbolLen)
-	copy(r.LegRawSymbol[:], body[symbolEnd+103:legSymbolEnd])
-	r.InstrumentClass = body[legSymbolEnd+0]
-	r.MatchAlgorithm = body[legSymbolEnd+1]
-	r.MdSecurityTradingStatus = body[legSymbolEnd+2]
-	r.MainFraction = body[legSymbolEnd+3]
-	r.PriceDisplayFormat = body[legSymbolEnd+4]
-	r.SettlPrice_type = body[legSymbolEnd+5]
-	r.SubFraction = body[legSymbolEnd+6]
-	r.UnderlyingProduct = body[legSymbolEnd+7]
-	r.SecurityUpdateAction = body[legSymbolEnd+8]
-	r.MaturityMonth = body[legSymbolEnd+9]
-	r.MaturityDay = body[legSymbolEnd+10]
-	r.MaturityWeek = body[legSymbolEnd+11]
-	r.UserDefinedInstrument = body[legSymbolEnd+12]
-	r.ContractMultiplierUnit = int8(body[legSymbolEnd+13])
-	r.FlowScheduleType = int8(body[legSymbolEnd+14])
-	r.TickRule = body[legSymbolEnd+15]
-	r.LegInstrumentClass = body[legSymbolEnd+16]
-	r.LegSide = body[legSymbolEnd+17]
-	copy(r.Reserved[:], body[legSymbolEnd+18:legSymbolEnd+35])
+	r.InstAttribValue = int32(binary.LittleEndian.Uint32(body[104:108]))
+	r.UnderlyingID = binary.LittleEndian.Uint32(body[108:112])
+	r.RawInstrumentID = uint64(binary.LittleEndian.Uint32(body[112:116])) // still u32 in V2
+	r.MarketDepthImplied = int32(binary.LittleEndian.Uint32(body[116:120]))
+	r.MarketDepth = int32(binary.LittleEndian.Uint32(body[120:124]))
+	r.MarketSegmentID = binary.LittleEndian.Uint32(body[124:128])
+	r.MaxTradeVol = binary.LittleEndian.Uint32(body[128:132])
+	r.MinLotSize = int32(binary.LittleEndian.Uint32(body[132:136]))
+	r.MinLotSizeBlock = int32(binary.LittleEndian.Uint32(body[136:140]))
+	r.MinLotSizeRoundLot = int32(binary.LittleEndian.Uint32(body[140:144]))
+	r.MinTradeVol = binary.LittleEndian.Uint32(body[144:148])
+	r.ContractMultiplier = int32(binary.LittleEndian.Uint32(body[148:152]))
+	r.DecayQuantity = int32(binary.LittleEndian.Uint32(body[152:156]))
+	r.OriginalContractSize = int32(binary.LittleEndian.Uint32(body[156:160]))
+	r.TradingReferenceDate = binary.LittleEndian.Uint16(body[160:162])
+	r.ApplID = int16(binary.LittleEndian.Uint16(body[162:164]))
+	r.MaturityYear = binary.LittleEndian.Uint16(body[164:166])
+	r.DecayStartDate = binary.LittleEndian.Uint16(body[166:168])
+	r.ChannelID = binary.LittleEndian.Uint16(body[168:170])
+	copy(r.Currency[:], body[170:174])
+	copy(r.SettlCurrency[:], body[174:178])
+	copy(r.Secsubtype[:], body[178:184])
+	symbolEnd := 184 + int(symbolLen)
+	copy(r.RawSymbol[:], body[184:symbolEnd])
+	copy(r.Group[:], body[symbolEnd:symbolEnd+21])
+	copy(r.Exchange[:], body[symbolEnd+21:symbolEnd+26])
+	copy(r.Asset[:], body[symbolEnd+26:symbolEnd+33])
+	copy(r.Cfi[:], body[symbolEnd+33:symbolEnd+40])
+	copy(r.SecurityType[:], body[symbolEnd+40:symbolEnd+47])
+	copy(r.UnitOfMeasure[:], body[symbolEnd+47:symbolEnd+78])
+	copy(r.Underlying[:], body[symbolEnd+78:symbolEnd+99])
+	copy(r.StrikePriceCurrency[:], body[symbolEnd+99:symbolEnd+103])
+	// V2: instrument_class comes right after strike_price_currency (no leg_raw_symbol)
+	pos := symbolEnd + 103
+	r.InstrumentClass = body[pos]
+	r.MatchAlgorithm = body[pos+1]
+	r.MdSecurityTradingStatus = body[pos+2]
+	r.MainFraction = body[pos+3]
+	r.PriceDisplayFormat = body[pos+4]
+	r.SettlPrice_type = body[pos+5]
+	r.SubFraction = body[pos+6]
+	r.UnderlyingProduct = body[pos+7]
+	r.SecurityUpdateAction = body[pos+8]
+	r.MaturityMonth = body[pos+9]
+	r.MaturityDay = body[pos+10]
+	r.MaturityWeek = body[pos+11]
+	r.UserDefinedInstrument = body[pos+12]
+	r.ContractMultiplierUnit = int8(body[pos+13])
+	r.FlowScheduleType = int8(body[pos+14])
+	r.TickRule = body[pos+15]
+	// _reserved: 10 bytes at pos+16
 	return nil
 }
 
