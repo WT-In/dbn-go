@@ -1,0 +1,382 @@
+// Copyright (c) 2025 Neomantra Corp
+
+package mcp_meta
+
+import (
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/WT-In/dbn-go"
+	dbn_hist "github.com/WT-In/dbn-go/hist"
+	"github.com/mark3labs/mcp-go/mcp"
+	mcp_server "github.com/mark3labs/mcp-go/server"
+	"github.com/relvacode/iso8601"
+)
+
+///////////////////////////////////////////////////////////////////////////////
+
+// ValidDatasets is the set of valid dataset codes for MCP tool enums.
+// via: dbn-go-hist datasets
+var ValidDatasets = []string{
+	"ARCX.PILLAR",
+	"BATS.PITCH",
+	"BATY.PITCH",
+	"DBEQ.BASIC",
+	"EDGA.PITCH",
+	"EDGX.PITCH",
+	"EPRL.DOM",
+	"EQUS.MINI",
+	"EQUS.SUMMARY",
+	"GLBX.MDP3",
+	"IEXG.TOPS",
+	"IFEU.IMPACT",
+	"IFLL.IMPACT",
+	"IFUS.IMPACT",
+	"MEMX.MEMOIR",
+	"NDEX.IMPACT",
+	"OPRA.PILLAR",
+	"XASE.PILLAR",
+	"XBOS.ITCH",
+	"XCHI.PILLAR",
+	"XCIS.TRADESBBO",
+	"XEEE.EOBI",
+	"XEUR.EOBI",
+	"XNAS.BASIC",
+	"XNAS.ITCH",
+	"XNYS.PILLAR",
+	"XPSX.ITCH",
+}
+
+// ValidSchemas is the set of valid schema codes for MCP tool enums.
+// via: dbn-go-hist schemas -d XNAS.ITCH
+var ValidSchemas = []string{
+	"mbo",
+	"mbp-10",
+	"mbp-1",
+	"cmbp-1",
+	"bbo-1s",
+	"bbo-1m",
+	"cbbo-1s",
+	"cbbo-1m",
+	"tbbo",
+	"tcbbo",
+	"trades",
+	"ohlcv-1s",
+	"ohlcv-1m",
+	"ohlcv-1h",
+	"ohlcv-1d",
+	"definition",
+	"imbalance",
+	"statistics",
+	"status",
+}
+
+// ValidStypes is the set of valid symbology types for MCP tool enums.
+var ValidStypes = []string{
+	"raw_symbol",
+	"instrument_id",
+	"smart",
+	"continuous",
+	"parent",
+	"nasdaq",
+	"cms",
+	"isin",
+	"us_code",
+	"bbg_comp_id",
+	"bbg_comp_ticker",
+	"figi",
+	"figi_ticker",
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+// RegisterMetaTools registers all metadata MCP tools (no billing) with the server.
+func (s *Server) RegisterMetaTools(mcpServer *mcp_server.MCPServer) {
+	// list_datasets - discovery tool (no billing)
+	mcpServer.AddTool(
+		mcp.NewTool("list_datasets",
+			mcp.WithDescription("Lists all available Databento dataset codes. Use this to discover valid dataset values before querying. Optionally filter by a date range to see which datasets have data in that period. This does not incur any billing."),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithString("start",
+				mcp.Description("Optional start of date range filter, as ISO 8601 datetime (e.g. 2024-01-01)"),
+			),
+			mcp.WithString("end",
+				mcp.Description("Optional end of date range filter, as ISO 8601 datetime (e.g. 2024-12-31)"),
+			),
+		),
+		s.listDatasetsHandler,
+	)
+	// list_schemas - discovery tool (no billing)
+	mcpServer.AddTool(
+		mcp.NewTool("list_schemas",
+			mcp.WithDescription("Lists all available data record schemas for a given dataset. Use this to discover which schemas (e.g. trades, ohlcv-1d, mbp-1) are available before querying. This does not incur any billing."),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithString("dataset",
+				mcp.Required(),
+				mcp.Description("Dataset code (e.g. XNAS.ITCH, GLBX.MDP3). Use list_datasets to discover valid values."),
+				mcp.Enum(ValidDatasets...),
+			),
+		),
+		s.listSchemasHandler,
+	)
+	// list_fields - discovery tool (no billing)
+	mcpServer.AddTool(
+		mcp.NewTool("list_fields",
+			mcp.WithDescription("Lists all field names and types for a given schema. Use this to understand the structure of records before querying with fetch_range. Returns fields for JSON encoding. This does not incur any billing."),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithString("schema",
+				mcp.Required(),
+				mcp.Description("Schema to inspect (e.g. trades, ohlcv-1d, mbp-1). Use list_schemas to discover valid values."),
+				mcp.Enum(ValidSchemas...),
+			),
+		),
+		s.listFieldsHandler,
+	)
+	// list_publishers - discovery tool (no billing)
+	mcpServer.AddTool(
+		mcp.NewTool("list_publishers",
+			mcp.WithDescription("Lists Databento publishers with their publisher_id, dataset code, venue, and description. Use this to discover which venues and data sources are available, and to map publisher IDs seen in records back to their source. Optionally filter by dataset. This does not incur any billing."),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithString("dataset",
+				mcp.Description("Optional dataset code to filter publishers (e.g. XNAS.ITCH, GLBX.MDP3). Use list_datasets to discover valid values."),
+				mcp.Enum(ValidDatasets...),
+			),
+		),
+		s.listPublishersHandler,
+	)
+	// get_dataset_range - discovery tool (no billing)
+	mcpServer.AddTool(
+		mcp.NewTool("get_dataset_range",
+			mcp.WithDescription("Returns the available date range (start and end) for a dataset. Use this to determine what time period of data is available before querying. This does not incur any billing."),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithString("dataset",
+				mcp.Required(),
+				mcp.Description("Dataset code (e.g. XNAS.ITCH, GLBX.MDP3). Use list_datasets to discover valid values."),
+				mcp.Enum(ValidDatasets...),
+			),
+		),
+		s.getDatasetRangeHandler,
+	)
+	// get_dataset_condition - discovery tool (no billing)
+	mcpServer.AddTool(
+		mcp.NewTool("get_dataset_condition",
+			mcp.WithDescription("Returns the data quality and availability condition for each day in a dataset's date range. Conditions are: 'available', 'degraded', 'pending', 'missing', or 'intraday'. Use this to check if data exists and is reliable before querying. This does not incur any billing."),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithString("dataset",
+				mcp.Required(),
+				mcp.Description("Dataset code (e.g. XNAS.ITCH, GLBX.MDP3). Use list_datasets to discover valid values."),
+				mcp.Enum(ValidDatasets...),
+			),
+			mcp.WithString("start",
+				mcp.Description("Optional start of date range filter, as ISO 8601 datetime (e.g. 2024-01-01). Defaults to beginning of dataset."),
+			),
+			mcp.WithString("end",
+				mcp.Description("Optional end of date range filter, as ISO 8601 datetime (e.g. 2024-01-31). Defaults to end of dataset."),
+			),
+		),
+		s.getDatasetConditionHandler,
+	)
+	// list_unit_prices - discovery tool (no billing)
+	mcpServer.AddTool(
+		mcp.NewTool("list_unit_prices",
+			mcp.WithDescription("Lists the unit prices in US dollars per gigabyte for each schema and feed mode in a dataset. Use this to understand relative costs of different schemas before querying. This does not incur any billing."),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithString("dataset",
+				mcp.Required(),
+				mcp.Description("Dataset code (e.g. XNAS.ITCH, GLBX.MDP3). Use list_datasets to discover valid values."),
+				mcp.Enum(ValidDatasets...),
+			),
+		),
+		s.listUnitPricesHandler,
+	)
+	// resolve_symbols - discovery tool (no billing)
+	mcpServer.AddTool(
+		mcp.NewTool("resolve_symbols",
+			mcp.WithDescription("Resolves symbols from one symbology type to another for a given dataset and date range. For example, convert a raw symbol like 'AAPL' to its instrument_id, or resolve a continuous futures contract. Returns mappings with date-range validity, plus lists of partial and not-found symbols. This does not incur any billing."),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithString("dataset",
+				mcp.Required(),
+				mcp.Description("Dataset code (e.g. XNAS.ITCH, GLBX.MDP3). Use list_datasets to discover valid values."),
+				mcp.Enum(ValidDatasets...),
+			),
+			mcp.WithString("symbols",
+				mcp.Required(),
+				mcp.Description("Comma-separated list of symbols to resolve (e.g. 'AAPL' or 'AAPL,TSLA,QQQ')"),
+			),
+			mcp.WithString("stype_in",
+				mcp.Description("Input symbology type (default: raw_symbol). In practice, only raw_symbol, instrument_id, and continuous are widely supported. Use 'continuous' for futures (e.g. ES.c.0) on GLBX.MDP3 and ICE datasets. Other values may return 422 for most datasets."),
+				mcp.Enum(ValidStypes...),
+			),
+			mcp.WithString("stype_out",
+				mcp.Description("Output symbology type (default: instrument_id). In practice, instrument_id is the only widely supported output type. Other values will return 422 for most datasets."),
+				mcp.Enum(ValidStypes...),
+			),
+			mcp.WithString("start",
+				mcp.Required(),
+				mcp.Description("Start of date range, as ISO 8601 datetime (e.g. 2024-01-01)"),
+			),
+			mcp.WithString("end",
+				mcp.Description("Optional end of date range (exclusive), as ISO 8601 datetime (e.g. 2024-12-31). Defaults to current date."),
+			),
+		),
+		s.resolveSymbolsHandler,
+	)
+	// get_cost
+	mcpServer.AddTool(
+		mcp.NewTool("get_cost",
+			mcp.WithDescription("Returns the estimated cost in USD, billable data size in bytes, and record count for a query. Always call this before fetch_range to understand cost implications. This does not incur any billing."),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithString("dataset",
+				mcp.Required(),
+				mcp.Description("Dataset to query (e.g. XNAS.ITCH, GLBX.MDP3)"),
+				mcp.Enum(ValidDatasets...),
+			),
+			mcp.WithString("schema",
+				mcp.Required(),
+				mcp.Description("Schema to query (e.g. trades, ohlcv-1d, mbp-1)"),
+				mcp.Enum(ValidSchemas...),
+			),
+			mcp.WithString("symbols",
+				mcp.Required(),
+				mcp.Description("Comma-separated symbols to query (e.g. 'AAPL' or 'AAPL,TSLA,MSFT'). Up to 2,000 symbols per request."),
+			),
+			mcp.WithString("stype_in",
+				mcp.Description("Input symbology type (default: raw_symbol). In practice, only raw_symbol, instrument_id, and continuous are widely supported. Use 'continuous' for futures (e.g. ES.c.0) on GLBX.MDP3 and ICE datasets."),
+				mcp.Enum(ValidStypes...),
+			),
+			mcp.WithString("start",
+				mcp.Required(),
+				mcp.Description("Start of range, as ISO 8601 datetime (e.g. 2024-01-15 or 2024-01-15T09:30:00Z)"),
+			),
+			mcp.WithString("end",
+				mcp.Required(),
+				mcp.Description("End of range (exclusive), as ISO 8601 datetime (e.g. 2024-01-16)"),
+			),
+		),
+		s.getCostHandler,
+	)
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+// CommonParams holds the parsed and validated parameters shared across tool handlers.
+type CommonParams struct {
+	Dataset   string
+	SchemaStr string
+	Symbols   []string
+	StypeIn   dbn.SType
+	StartStr  string
+	EndStr    string
+	StartTime time.Time
+	EndTime   time.Time
+}
+
+// ParseCommonParams extracts and validates dataset, schema, symbol, start, and end
+// from a tool request. Returns a tool-result error (not a Go error) so the LLM
+// can see and reason about validation failures.
+func ParseCommonParams(request mcp.CallToolRequest) (*CommonParams, *mcp.CallToolResult) {
+	var p CommonParams
+	var err error
+
+	if p.Dataset, err = request.RequireString("dataset"); err != nil {
+		return nil, mcp.NewToolResultError("dataset must be set")
+	}
+	p.Dataset = strings.ToUpper(p.Dataset)
+	if !slices.Contains(ValidDatasets, p.Dataset) {
+		return nil, mcp.NewToolResultErrorf("unknown dataset: %s", p.Dataset)
+	}
+
+	if p.SchemaStr, err = request.RequireString("schema"); err != nil {
+		return nil, mcp.NewToolResultError("schema must be set")
+	}
+	p.SchemaStr = strings.ToLower(p.SchemaStr)
+	if !slices.Contains(ValidSchemas, p.SchemaStr) {
+		return nil, mcp.NewToolResultErrorf("unknown schema: %s", p.SchemaStr)
+	}
+
+	symbolsStr, err := request.RequireString("symbols")
+	if err != nil {
+		return nil, mcp.NewToolResultError("symbols must be set")
+	}
+	p.Symbols = strings.Split(symbolsStr, ",")
+	for i := range p.Symbols {
+		p.Symbols[i] = strings.TrimSpace(p.Symbols[i])
+	}
+
+	p.StypeIn = dbn.SType_RawSymbol
+	if stypeInStr, err := request.RequireString("stype_in"); err == nil && stypeInStr != "" {
+		if p.StypeIn, err = dbn.STypeFromString(stypeInStr); err != nil {
+			return nil, mcp.NewToolResultErrorf("invalid stype_in: %s", err)
+		}
+	}
+
+	if p.StartStr, err = request.RequireString("start"); err != nil {
+		return nil, mcp.NewToolResultError("start must be set")
+	}
+	if p.StartTime, err = iso8601.ParseString(p.StartStr); err != nil {
+		return nil, mcp.NewToolResultErrorf("start was invalid ISO 8601: %s", err)
+	}
+
+	if p.EndStr, err = request.RequireString("end"); err != nil {
+		return nil, mcp.NewToolResultError("end must be set")
+	}
+	if p.EndTime, err = iso8601.ParseString(p.EndStr); err != nil {
+		return nil, mcp.NewToolResultErrorf("end was invalid ISO 8601: %s", err)
+	}
+
+	return &p, nil
+}
+
+// MetadataQueryParams builds a MetadataQueryParams from CommonParams.
+func (p *CommonParams) MetadataQueryParams() dbn_hist.MetadataQueryParams {
+	return dbn_hist.MetadataQueryParams{
+		Dataset:   p.Dataset,
+		Schema:    p.SchemaStr,
+		Symbols:   p.Symbols,
+		DateRange: dbn_hist.DateRange{Start: p.StartTime, End: p.EndTime},
+		Mode:      dbn_hist.FeedMode_Historical,
+		StypeIn:   p.StypeIn,
+	}
+}
+
+// ParseOptionalDateRange extracts optional start and end parameters into a DateRange.
+// Returns a tool-result error if a provided value is not valid ISO 8601.
+func ParseOptionalDateRange(request mcp.CallToolRequest) (dbn_hist.DateRange, *mcp.CallToolResult) {
+	var dateRange dbn_hist.DateRange
+
+	if startStr, err := request.RequireString("start"); err == nil && startStr != "" {
+		if startTime, err := iso8601.ParseString(startStr); err != nil {
+			return dateRange, mcp.NewToolResultErrorf("start was invalid ISO 8601: %s", err)
+		} else {
+			dateRange.Start = startTime
+		}
+	}
+	if endStr, err := request.RequireString("end"); err == nil && endStr != "" {
+		if endTime, err := iso8601.ParseString(endStr); err != nil {
+			return dateRange, mcp.NewToolResultErrorf("end was invalid ISO 8601: %s", err)
+		} else {
+			dateRange.End = endTime
+		}
+	}
+
+	return dateRange, nil
+}

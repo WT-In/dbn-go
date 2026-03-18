@@ -241,18 +241,18 @@ func (s *DbnScanner) Visit(visitor Visitor) error {
 			return visitor.OnOhlcv(&record)
 		}
 	// CBBO schemas
-	case RType_Cbbo, RType_Cbbo1S, RType_Cbbo1M:
-		record := CbboMsg{}
-		if err := record.Fill_Raw(s.lastRecord[:CbboMsg_Size]); err != nil {
-			return err // TODO: OnError()
+	case RType_Cmbp1, RType_Cbbo1S, RType_Cbbo1M:
+		record := Cmbp1Msg{}
+		if err := record.Fill_Raw(s.lastRecord[:Cmbp1Msg_Size]); err != nil {
+			return err
 		} else {
-			return visitor.OnCbbo(&record)
+			return visitor.OnCmbp1(&record)
 		}
 	// TCBBO schema
 	case RType_Tcbbo:
 		record := TcbboMsg{}
 		if err := record.Fill_Raw(s.lastRecord[:TcbboMsg_Size]); err != nil {
-			return err // TODO: OnError()
+			return err
 		} else {
 			return visitor.OnTcbbo(&record)
 		}
@@ -306,6 +306,14 @@ func (s *DbnScanner) Visit(visitor Visitor) error {
 			return err // TODO: OnError()
 		} else {
 			return visitor.OnStatusMsg(&record)
+		}
+	// BBO schemas
+	case RType_Bbo1S, RType_Bbo1M:
+		record := BboMsg{}
+		if err := record.Fill_Raw(s.lastRecord[:BboMsg_Size]); err != nil {
+			return err // TODO: OnError()
+		} else {
+			return visitor.OnBbo(&record)
 		}
 
 	// InstrumentDef

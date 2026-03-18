@@ -6,3 +6,10 @@ bin/
 dist/
 
 /*.dbn.zst
+
+# Go stuff
+.gocache/
+
+# Generated Documentation
+/docs/man
+docs-databento/

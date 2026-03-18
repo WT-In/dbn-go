@@ -9,7 +9,8 @@ type Visitor interface {
 	OnMbo(record *MboMsg) error
 
 	OnOhlcv(record *OhlcvMsg) error
-	OnCbbo(record *CbboMsg) error
+	OnCmbp1(record *Cmbp1Msg) error
+	OnBbo(record *BboMsg) error
 	OnTcbbo(record *TcbboMsg) error
 
 	OnImbalance(record *ImbalanceMsg) error

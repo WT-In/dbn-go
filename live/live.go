@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/WT-In/dbn-go"
@@ -148,7 +149,7 @@ func NewLiveClient(config LiveConfig) (*LiveClient, error) {
 	}
 
 	// Connect to server
-	hostPort := fmt.Sprintf("%s:%d", c.gateway, c.port)
+	hostPort := net.JoinHostPort(c.gateway, strconv.FormatUint(uint64(c.port), 10))
 	if conn, err := net.Dial("tcp", hostPort); err != nil {
 		return nil, err
 	} else {
@@ -183,7 +184,7 @@ func (c *LiveClient) GetLsgVersion() string {
 
 // GetSessionID returns the session ID
 func (c *LiveClient) GetSessionID() string {
-	return c.lsgVersion
+	return c.sessionID
 }
 
 // GetDbnScanner returns the DbnScanner
@@ -244,11 +245,15 @@ func (c *LiveClient) Start() error {
 		c.logger.Info("[LiveClient.Start] sent start_session")
 	}
 
+	if c.bufReader == nil {
+		c.bufReader = bufio.NewReaderSize(c.conn, MAX_STR_LENGTH)
+	}
+
 	// Create a DbnScanner and ensure we get the metadata
 	if c.config.Encoding == dbn.Encoding_Json {
-		c.jsonScanner = dbn.NewJsonScanner(c.conn)
+		c.jsonScanner = dbn.NewJsonScanner(c.bufReader)
 	} else {
-		c.dbnScanner = dbn.NewDbnScanner(c.conn)
+		c.dbnScanner = dbn.NewDbnScanner(c.bufReader)
 		_, err := c.dbnScanner.Metadata()
 		if err != nil {
 			return fmt.Errorf("failed to get metadata: %v", err)
@@ -300,7 +305,7 @@ func (c *LiveClient) Authenticate(apiKey string) (string, error) {
 		Dataset:  c.config.Dataset,
 		Encoding: c.config.Encoding,
 		TsOut:    c.config.SendTsOut,
-		Client:   "Go " + DATABENTO_VERSION,
+		Client:   c.config.Client,
 	}
 	requestBytes := request.Encode()
 	if n, err := c.conn.Write(requestBytes); err != nil {

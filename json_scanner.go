@@ -137,18 +137,18 @@ func dispatchJsonVisitor(val *fastjson.Value, header *RHeader, visitor Visitor) 
 			return visitor.OnOhlcv(&record)
 		}
 	// CBBO schemas
-	case RType_Cbbo, RType_Cbbo1S, RType_Cbbo1M:
-		record := CbboMsg{}
+	case RType_Cmbp1, RType_Cbbo1S, RType_Cbbo1M:
+		record := Cmbp1Msg{}
 		if err := record.Fill_Json(val, header); err != nil {
-			return err // TODO: OnError()
+			return err
 		} else {
-			return visitor.OnCbbo(&record)
+			return visitor.OnCmbp1(&record)
 		}
 	// TCBBO schema
 	case RType_Tcbbo:
 		record := TcbboMsg{}
 		if err := record.Fill_Json(val, header); err != nil {
-			return err // TODO: OnError()
+			return err
 		} else {
 			return visitor.OnTcbbo(&record)
 		}

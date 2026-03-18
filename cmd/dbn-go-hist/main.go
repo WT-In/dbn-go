@@ -16,6 +16,7 @@ import (
 
 	"github.com/WT-In/dbn-go"
 	dbn_hist "github.com/WT-In/dbn-go/hist"
+	dbn_file "github.com/WT-In/dbn-go/internal/file"
 	dbn_tui "github.com/WT-In/dbn-go/internal/tui"
 	"github.com/charmbracelet/huh"
 	"github.com/dustin/go-humanize"
@@ -217,6 +218,7 @@ func main() {
 
 	rootCmd.AddCommand(listPublishersCmd)
 	listPublishersCmd.Flags().BoolVarP(&emitJSON, "json", "j", false, "Emit JSON instead of simple summary")
+	listPublishersCmd.Flags().StringVarP(&outputFile, "parquet", "p", "", "Output PARQUET table to file ('-' is stdout)")
 
 	rootCmd.AddCommand(listSchemasCmd)
 	listSchemasCmd.Flags().StringVarP(&dataset, "dataset", "d", "", "Dataset to list schema for")
@@ -317,6 +319,13 @@ func main() {
 	rootCmd.AddCommand(tuiCmd)
 	tuiCmd.Flags().IntVarP(&maxActiveDownloads, "limit", "l", defaultMaxActiveDownloads, "Limit maximum concurrent downloads")
 
+	docsCmd.AddCommand(docsMarkdownCmd)
+	docsCmd.AddCommand(docsManCmd)
+	docsCmd.PersistentFlags().StringVarP(&docsOutputDir, "output", "o", "docs", "Output directory for generated docs")
+	docsCmd.PersistentFlags().BoolVar(&docsEnableAutoGenTag, "enableAutoGenTag", false, "Enable auto-generation tag in docs")
+	docsMarkdownCmd.Flags().BoolVar(&docsHugo, "hugo", false, "Generate Hugo-compatible markdown with YAML front matter")
+	rootCmd.AddCommand(docsCmd)
+
 	err := rootCmd.Execute()
 	requireNoError(err)
 }
@@ -362,6 +371,11 @@ var listPublishersCmd = &cobra.Command{
 
 		if emitJSON {
 			printJSON(publishers)
+			return
+		}
+		if outputFile != "" {
+			err := dbn_file.WritePublishersAsParquet(publishers, false, outputFile)
+			requireNoError(err)
 			return
 		}
 		for _, publisher := range publishers {
@@ -487,15 +501,14 @@ var getCostCmd = &cobra.Command{
 		symbols := requireSymbolArgs(args)
 		metaParams := getMetadataQueryParams(symbols)
 
-		cost, err := dbn_hist.GetCost(apiKey, metaParams)
-		requireNoError(err)
-		dataSize, err := dbn_hist.GetBillableSize(apiKey, metaParams)
-		requireNoError(err)
-		recordCount, err := dbn_hist.GetRecordCount(apiKey, metaParams)
+		cost, dataSize, recordCount, err := getCostsChunked(apiKey, symbols)
 		requireNoError(err)
 
 		if emitJSON {
 			printJSON(map[string]interface{}{
+				"dataset":      metaParams.Dataset,
+				"schema":       metaParams.Schema,
+				"num_symbols":  len(metaParams.Symbols),
 				"query":        metaParams,
 				"cost":         cost,
 				"data_size":    dataSize,
@@ -686,12 +699,7 @@ func requireBudgetApproval(apiKey string, symbols []string, params *dbn_hist.Sub
 
 	// Request cost of this job
 	fmt.Fprintf(os.Stderr, "Getting cost estimates for job...\n")
-	metaParams := getMetadataQueryParams(symbols)
-	cost, err := dbn_hist.GetCost(apiKey, metaParams)
-	requireNoError(err)
-	dataSize, err := dbn_hist.GetBillableSize(apiKey, metaParams)
-	requireNoError(err)
-	recordCount, err := dbn_hist.GetRecordCount(apiKey, metaParams)
+	cost, dataSize, recordCount, err := getCostsChunked(apiKey, symbols)
 	requireNoError(err)
 
 	fmt.Fprintf(os.Stderr, "Estimated cost of $%.2f for %s records and %s of data.\n",
@@ -704,4 +712,39 @@ func printJSON[T any](val T) {
 	jstr, err := json.Marshal(val)
 	requireNoError(err)
 	fmt.Fprintf(os.Stdout, "%s\n", jstr)
+}
+
+// getCostsChunked returns the estimated costs and sizes for the given symbol list.
+// Since it is a GET request, too many symbols in the request can result in
+// a "414 Request-URI Too Large" error.  So we break it into smaller requests and sum the results.
+func getCostsChunked(apiKey string, symbols []string) (totalCost float64, totalSize int, totalRecords int, err error) {
+	// we break it into 200 symbol chunks
+	const chunkSize = 200
+	for i := 0; i < len(symbols); i += chunkSize {
+		end := i + chunkSize
+		if end > len(symbols) {
+			end = len(symbols)
+		}
+		chunk := symbols[i:end]
+		metaParams := getMetadataQueryParams(chunk)
+
+		var cost float64
+		var billableSize, recordCount int
+		cost, err = dbn_hist.GetCost(apiKey, metaParams)
+		if err != nil {
+			return
+		}
+		totalCost += cost
+		billableSize, err = dbn_hist.GetBillableSize(apiKey, metaParams)
+		if err != nil {
+			return
+		}
+		totalSize += billableSize
+		recordCount, err = dbn_hist.GetRecordCount(apiKey, metaParams)
+		if err != nil {
+			return
+		}
+		totalRecords += recordCount
+	}
+	return
 }

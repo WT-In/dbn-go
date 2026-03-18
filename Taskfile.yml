@@ -1,5 +1,8 @@
 version: '3'
 
+vars:
+  GORELEASER_CROSS_VERSION: v1.25.7
+
 tasks:
   default:
     desc: 'Default task is to "test" and "build"'
@@ -18,14 +21,35 @@ tasks:
       - go-build
 
   test:
-    desc: 'Test all'
+    desc: 'Test offline-safe paths'
     deps:
       - go-test
+      - test-mcp
+
+  test-all:
+    desc: 'Test offline + integration paths'
+    deps:
+      - test
+      - test-cli
+      - test-integration
+
+  test-cli:
+    desc: 'Test local CLI paths'
+    deps:
+      - go-test
+      - test-dbn-go-file
+      - test-dbn-go-hist
+
+  test-integration:
+    desc: 'Test paths that require Databento credentials'
+    deps:
+      - go-test-integration
+      - test-mcp-api
 
   clean:
     desc: 'Clean all'
     cmds:
-      - rm -f bin/dbn-go-file bin/dbn-go-hist bin/dbn-go-live bin/dbn-go-mcp bin/dbn-go-tui
+      - rm -f bin/dbn-go-file bin/dbn-go-hist bin/dbn-go-live bin/dbn-go-mcp-meta bin/dbn-go-mcp-data bin/dbn-go-tui bin/dbn-go-slurp-docs
 
   docker-build:
     desc: 'Docker build'
@@ -47,7 +71,6 @@ tasks:
       - live/*.go
       - cmd/**/*.go
 
-
   go-update:
     desc: 'Update Go dependencies'
     cmds:
@@ -59,8 +82,10 @@ tasks:
       - build-dbn-go-file
       - build-dbn-go-hist
       - build-dbn-go-live
-      - build-dbn-go-mcp
+      - build-dbn-go-mcp-meta
+      - build-dbn-go-mcp-data
       - build-dbn-go-tui
+      - build-dbn-go-slurp-docs
 
   build-dbn-go-file:
     desc: 'Build dbn-go-file'
@@ -86,6 +111,36 @@ tasks:
       - bin/dbn-go-hist
     cmds:
       - go build -o bin/dbn-go-hist cmd/dbn-go-hist/*.go
+
+  test-mcp:
+    desc: 'Smoke-test MCP servers (requires DATABENTO_API_KEY or DATABENTO_API_KEY_FILE)'
+    deps: [build-dbn-go-mcp-meta, build-dbn-go-mcp-data]
+    cmds:
+      - ./scripts/smoke-test-mcp.sh -q
+
+  test-mcp-meta:
+    desc: 'Smoke-test dbn-go-mcp-meta only'
+    deps: [build-dbn-go-mcp-meta]
+    cmds:
+      - ./scripts/smoke-test-mcp.sh -q meta
+
+  test-mcp-data:
+    desc: 'Smoke-test dbn-go-mcp-data only'
+    deps: [build-dbn-go-mcp-data]
+    cmds:
+      - ./scripts/smoke-test-mcp.sh -q data
+
+  test-mcp-api:
+    desc: 'Smoke-test MCP servers with list_datasets API call'
+    deps: [build-dbn-go-mcp-meta, build-dbn-go-mcp-data]
+    cmds:
+      - ./scripts/smoke-test-mcp.sh -q -a
+
+  test-mcp-verbose:
+    desc: 'Smoke-test MCP servers with full JSON output'
+    deps: [build-dbn-go-mcp-meta, build-dbn-go-mcp-data]
+    cmds:
+      - ./scripts/smoke-test-mcp.sh
 
   test-dbn-go-file:
     desc: 'Test dbn-go-file'
@@ -113,18 +168,33 @@ tasks:
     cmds:
       - go build -o bin/dbn-go-live cmd/dbn-go-live/*.go
 
-  build-dbn-go-mcp:
-    desc: 'Build dbn-go-mcp'
+  build-dbn-go-mcp-meta:
+    desc: 'Build dbn-go-mcp-meta'
     deps: [go-tidy]
     sources:
       - ./*.go
       - hist/*.go
       - internal/**/*.go
-      - cmd/dbn-go-mcp/*.go
+      - cmd/dbn-go-mcp-meta/*.go
     generates:
-      - bin/dbn-go-mcp
+      - bin/dbn-go-mcp-meta
     cmds:
-      - go build -o bin/dbn-go-mcp cmd/dbn-go-mcp/*.go
+      - go build -o bin/dbn-go-mcp-meta cmd/dbn-go-mcp-meta/*.go
+
+  build-dbn-go-mcp-data:
+    desc: 'Build dbn-go-mcp-data'
+    deps: [go-tidy]
+    env:
+      CGO_ENABLED: "1"
+    sources:
+      - ./*.go
+      - hist/*.go
+      - internal/**/*.go
+      - cmd/dbn-go-mcp-data/*.go
+    generates:
+      - bin/dbn-go-mcp-data
+    cmds:
+      - go build -o bin/dbn-go-mcp-data cmd/dbn-go-mcp-data/*.go
 
   build-dbn-go-tui:
     desc: 'Build dbn-go-tui'
@@ -139,26 +209,190 @@ tasks:
     cmds:
       - go build -o bin/dbn-go-tui cmd/dbn-go-tui/*.go
 
+  build-dbn-go-slurp-docs:
+    desc: 'Build dbn-go-slurp-docs'
+    deps: [go-tidy]
+    sources:
+      - cmd/dbn-go-slurp-docs/*.go
+      - internal/docs/*.go
+    generates:
+      - bin/dbn-go-slurp-docs
+    cmds:
+      - go build -o bin/dbn-go-slurp-docs cmd/dbn-go-slurp-docs/*.go
+
   go-test:
-    desc: 'Test Go'
+    desc: 'Test Go (offline-safe)'
     deps: [go-tidy]
     sources:
       - ./*.go
       - cmd/dbn-go-file/*.go
       - cmd/dbn-go-hist/*.go
       - cmd/dbn-go-live/*.go
-      - cmd/dbn-go-mcp/*.go
+      - cmd/dbn-go-mcp-meta/*.go
+      - cmd/dbn-go-mcp-data/*.go
       - cmd/dbn-go-tui/*.go
       - hist/*.go
-      - internal/*.go
+      - internal/**/*.go
       - live/*.go
     cmds:
       - go test ./...
 
-  go-test-no-api:
-    desc: 'Test Go, but no API calls'
+  go-test-integration:
+    desc: 'Test Go integration paths requiring Databento credentials'
     deps: [go-tidy]
     cmds:
-      - go test && go test ./live
+      - go test -tags=integration ./hist
 
 ###############################################################################
+
+  docs:build:
+    desc: 'Build all generated docs (markdown + man)'
+    deps:
+      - docs:md:build
+      - docs:man:build
+
+  docs:clean:
+    desc: 'Clean all generated docs'
+    deps:
+      - docs:md:clean
+      - docs:man:clean
+
+  docs:md:build:
+    desc: 'Generate Hugo markdown command docs'
+    deps:
+      - docs:md:build:dbn-go-hist
+      - docs:md:build:dbn-go-file
+
+  docs:md:build:dbn-go-hist:
+    desc: 'Generate Hugo markdown for dbn-go-hist'
+    deps: [build-dbn-go-hist]
+    cmds:
+      - ./bin/dbn-go-hist docs markdown --hugo -o docs/hugo/content/dbn-go-hist/command
+    sources:
+      - ./cmd/dbn-go-hist/*.go
+    generates:
+      - docs/hugo/content/dbn-go-hist/command/dbn-go-hist.md
+
+  docs:md:build:dbn-go-file:
+    desc: 'Generate Hugo markdown for dbn-go-file'
+    deps: [build-dbn-go-file]
+    cmds:
+      - ./bin/dbn-go-file docs markdown --hugo -o docs/hugo/content/dbn-go-file/command
+    sources:
+      - ./cmd/dbn-go-file/*.go
+    generates:
+      - docs/hugo/content/dbn-go-file/command/dbn-go-file.md
+
+  docs:md:clean:
+    desc: 'Clean generated markdown docs'
+    cmds:
+      - rm -rf docs/hugo/content/dbn-go-hist/command
+      - rm -rf docs/hugo/content/dbn-go-file/command
+
+  docs:man:build:
+    desc: 'Generate man pages'
+    deps:
+      - docs:man:build:dbn-go-hist
+      - docs:man:build:dbn-go-file
+
+  docs:man:build:dbn-go-hist:
+    desc: 'Generate man pages for dbn-go-hist'
+    deps: [build-dbn-go-hist]
+    cmds:
+      - ./bin/dbn-go-hist docs man -o docs/man
+    sources:
+      - ./cmd/dbn-go-hist/*.go
+    generates:
+      - docs/man/dbn-go-hist.1
+
+  docs:man:build:dbn-go-file:
+    desc: 'Generate man pages for dbn-go-file'
+    deps: [build-dbn-go-file]
+    cmds:
+      - ./bin/dbn-go-file docs man -o docs/man
+    sources:
+      - ./cmd/dbn-go-file/*.go
+    generates:
+      - docs/man/dbn-go-file.1
+
+  docs:man:clean:
+    desc: 'Clean generated man pages'
+    cmds:
+      - rm -rf docs/man
+
+  docs:hugo:serve:
+    desc: 'Serve Hugo docs locally'
+    deps: [docs:md:build]
+    dir: docs/hugo
+    cmds:
+      - hugo serve
+
+  docs:hugo:build:
+    desc: 'Build Hugo static site'
+    deps: [docs:md:build]
+    dir: docs/hugo
+    cmds:
+      - rm -rf public
+      - hugo --minify
+
+###############################################################################
+
+  docs:databento:init:
+    desc: 'Generate docs-databento directory structure (requires Chrome to generate sitemap)'
+    deps: [build-dbn-go-slurp-docs]
+    cmds:
+      - ./bin/dbn-go-slurp-docs -generate-sitemap docs-databento
+      - ./bin/dbn-go-slurp-docs docs-databento
+
+  docs:databento:fetch:
+    desc: 'Fetch all docs content with Chrome (slow, ~15 minutes)'
+    deps: [build-dbn-go-slurp-docs]
+    cmds:
+      - ./bin/dbn-go-slurp-docs -generate-sitemap -fetch docs-databento
+
+  docs:databento:fetch-fast:
+    desc: 'Fetch docs with shorter delays (may hit rate limits)'
+    deps: [build-dbn-go-slurp-docs]
+    cmds:
+      - ./bin/dbn-go-slurp-docs -generate-sitemap -fetch -delay=1s -v docs-databento
+
+  docs:databento:resume:
+    desc: 'Resume fetching docs from where it left off'
+    deps: [build-dbn-go-slurp-docs]
+    cmds:
+      - ./bin/dbn-go-slurp-docs -fetch docs-databento
+
+  docs:databento:reset:
+    desc: 'Reset docs-databento and start fresh (regenerates sitemap)'
+    deps: [build-dbn-go-slurp-docs]
+    cmds:
+      - rm -rf docs-databento
+      - ./bin/dbn-go-slurp-docs -generate-sitemap -fetch -no-resume docs-databento
+
+  docs:databento:clean:
+    desc: 'Removes docs-databento'
+    cmds:
+      - rm -rf docs-databento
+
+  ###############################################################################
+  # Release
+  ###############################################################################
+
+  release:notarize:
+    desc: Notarize the build
+    deps: [build]
+    cmds:
+      - |
+        if [ -z "$MACOS_CODESIGN_ID" ]; then
+          echo "Error: MACOS_CODESIGN_ID env var not set"
+          exit 1
+        fi
+      - codesign --force --options runtime -s "$MACOS_CODESIGN_ID" {{.BIN_DIR}}/thinkt
+      - codesign -dv --verbose=4 {{.BIN_DIR}}/thinkt
+      - ditto -c -k ./bin/thinkt thinkt.zip
+      - xcrun notarytool submit thinkt.zip --key "$MACOS_NOTARY_KEY" --key-id "$MACOS_NOTARY_KEY_ID" --issuer "$MACOS_NOTARY_ISSUER_ID" --wait
+
+  release:test:
+    desc: Test release build with goreleaser-cross
+    cmds:
+      - docker run --rm -v "$PWD":/work -w /work ghcr.io/goreleaser/goreleaser-cross:{{.GORELEASER_CROSS_VERSION}} build --clean --snapshot

@@ -16,7 +16,7 @@ This repository contains Golang bindings to [Databento's](https://databento.com)
  * [Historical API](#historical-api)
  * [Live API](#live-api)
  * [Tools](#tools)
-   * [Installation](#tools-installation)
+   * [Tool Installation](./cmd/README.md#installation)
 
 **NOTE:** This library is **not** affiliated with Databento.  Please be careful with commands which incur billing.  We are not responsible for any charges you incur.
 
@@ -38,7 +38,7 @@ Most `dbn-go` [types](./structs.go) and [enums](./consts.go) parallel Databento'
   * [`Mbp0Msg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#Mbp0Msg)
   * [`MboMsg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#MboMsg)
   * [`Mbp1Msg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#Mbp1Msg)
-  * [`CbboMsg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#CbboMsg)
+  * [`Cmbp1Msg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#Cmbp1Msg)
   * [`Mbp10Msg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#Mbp10Msg)
   * [`OhlcvMsg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#OhlcvMsg)
   * [`ImbalanceMsg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#ImbalanceMsg)
@@ -124,7 +124,7 @@ Support for the [Databento Historical API](https://databento.com/docs/api-refere
 
 ```
 databentoApiKey := os.Getenv("DATABENTO_API_KEY")
-schemas, err := dbn_hist.ListSchemas(databentoApiKey, "DBEQ.MINI")
+schemas, err := dbn_hist.ListSchemas(databentoApiKey, "EQUS.MINI")
 ```
 
 The source for `dbn-go-hist` illustrates [using this `dbn_hist` module](https://github.com/NimbleMarkets/dbn-go/blob/main/cmd/dbn-go-hist/main.go#L104).
@@ -153,6 +153,7 @@ We include [some tools](./cmd/README.md) to make our lives easier. [Installation
  * [`dbn-go-hist`](./cmd/README.md#dbn-go-hist): a CLI to use the Historical API
  * [`dbn-go-live`](./cmd/README.md#dbn-go-live): a simple Live API feed handler
  * [`dbn-go-mcp`](./cmd/README.md#dbn-go-mcp): a LLM Model Context Protocol (MCP) server
+ * [`dbn-go-slurp-docs`](./cmd/README.md#dbn-go-slurp-docs): a tool to scrape Databento docs for offline use
  * [`dbn-go-tui`](./cmd/README.md#dbn-go-tui): a TUI for your Databento account
 
 ## Open Collaboration

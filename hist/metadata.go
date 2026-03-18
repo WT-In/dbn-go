@@ -82,7 +82,7 @@ type MetadataQueryParams struct {
 	Symbols   []string  `json:"symbols"`            // The product symbols to filter for. Takes up to 2,000 symbols per request. If `ALL_SYMBOLS` or not specified then will be for all symbols.
 	Schema    string    `json:"schema,omitempty"`   // The data record schema. Must be one of the values from ListSchemas.
 	DateRange DateRange `json:"date_range"`         // The date range of the request.
-	Mode      FeedMode  `json:"mode,omitempty"`     // The data feed mode of the request. Must be one of 'historical', 'historical-streaming', or 'live'.
+	Mode      FeedMode  `json:"mode"`               // The data feed mode of the request. Must be one of 'historical', 'historical-streaming', or 'live'.
 	StypeIn   dbn.SType `json:"stype_in,omitempty"` // The symbology type of input symbols. Must be one of 'raw_symbol', 'instrument_id', 'parent', or 'continuous'.
 	Limit     int32     `json:"limit,omitempty"`    // The maximum number of records to return. 0 and negative (-1) means no limit.
 }
@@ -130,13 +130,13 @@ type FieldDetail struct {
 	// The field name.
 	Name string `json:"name,omitempty"`
 	// The field type name.
-	TypeName string `json:"type_name,omitempty"`
+	TypeName string `json:"type,omitempty"`
 }
 
 // The unit prices for a particular [`FeedMode`].
 type UnitPricesForMode struct {
 	/// The data feed mode.
-	Mode FeedMode `json:"mode,omitempty"`
+	Mode FeedMode `json:"mode"`
 	/// The unit prices in US dollars by data record schema.
 	UnitPrices map[string]float64 `json:"unit_prices,omitempty"`
 }
@@ -146,12 +146,13 @@ const (
 	Condition_Degraded  = "degraded"
 	Condition_Pending   = "pending"
 	Condition_Missing   = "missing"
+	Condition_Intraday  = "intraday"
 )
 
 type ConditionDetail struct {
-	Date         string // The day of the described data, as an ISO 8601 date string
-	Condition    string // The condition code describing the quality and availability of the data on the given day. Possible values are ConditionKind.
-	LastModified string // The date when any schema in the dataset on the given day was last generated or modified, as an ISO 8601 date string.
+	Date         string `json:"date"`               // The day of the described data, as an ISO 8601 date string
+	Condition    string `json:"condition"`          // The condition code describing the quality and availability of the data on the given day. Possible values are ConditionKind.
+	LastModified string `json:"last_modified_date"` // The date when any schema in the dataset on the given day was last generated or modified, as an ISO 8601 date string.
 }
 
 //////////////////////////////////////////////////////////////////////////////

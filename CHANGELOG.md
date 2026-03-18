@@ -1,5 +1,88 @@
 # CHANGELOG
 
+## v0.8.9 (2026-03-13)
+
+  * [MCP enhancements](./cmd/dbn-go-mcp/README.md)
+    * `query_cache` now supports `format` parameter: `csv` (default), `json_rows`, and `json_columnar` output formats
+    * `query_cache` now supports `max_rows` parameter for explicit row limits
+    * Add `--read-only` flag to `dbn-go-mcp-data` to disable `fetch_range` (no billing possible)
+  * fix(mcp): Ensure API key validation in MCP handlers
+  * fix(mcp): Fix schema-only `clear_cache` filtering
+  * fix(mcp): Fix streaming and cache correctness issues
+  * fix(mcp): SQL injection hardening
+  * fix(parquet): Fix parquet writers that only wrote one row
+  * chore(test): Break out integration tests that need `DATABENTO_API_KEY`
+  * fix(ci): Resolve CI and Docker issues
+
+## v0.8.8 (2026-03-08)
+
+  * [MCP enhancements](./cmd/dbn-go-mcp/README.md)
+    * `dbn-go-mcp-meta` for metadata-only queries
+      * [9 MCP tools](./cmd/dbn-go-mcp-meta/README.md#discovery-tools-no-billing) reflecting   the DataBento Metadata API
+      * No billable DataBento API calls 
+    * `dbn-go-mcp-data` for data retrieval and analysis
+      * 1 billable tool `fetch_range` which fills a local Parquet cache
+      * `query_cache` for DuckDB-SQL queries against the cache
+  * Releases are now notarized by [Neomantra Corp](https://www.neomantra.com) for MacOS installs
+  * Fix Parquet conversion for `mbp-1`, `tbbo`, `imbalances`, `statistics`
+  * fix(live): LiveClient could lose the first bytes of the DBN/JSON stream after authentication.
+
+## v0.7.1 (2026-02-11)
+
+ * Improve metadata tools in [MCP server](./cmd/dbn-go-mcp/README.md)
+ * Fix `FieldDetail.TypeName` JSON field name, which broke `dbn_hist.GetFields`
+ * Add `dbn-go-slurp-docs` to GoReleaser
+
+## v0.7.0 (2026-02-10)
+
+ * Add `dbn-go-slurp-docs` for [docs for LLMs](./cmd/README.md#dbn-go-slurp-docs)
+ * Add `Publisher`, `Dataset`, and `Venue` types
+ * Add `SystemCode` and `ErrorCode` enums.
+   * `SystemMsg` and `ErrorMsg` use them now instead of raw values
+ * Add `SystemMsg.IsHeartbeat`
+ * Copy `DBN v3` test data files from upstream
+ * Add [`AGENTS.md`](./AGENTS.md)
+
+## v0.6.5 (2025-10-01)
+
+ * Add Parquet support for Statistics message `StatMsg`
+ * `dbn-go-hist` now dispatches multiple smaller requests for cost estimates since
+    large numbers of tickers would overrun the URI limits.
+
+## v0.6.4 (2025-09-05)
+
+ * Add Parquet export of publishers with `dbn-go-hist publishers --parquet <outfile>`.  Useful for some DuckDB queries.
+
+## v0.6.3 (2025-08-11)
+
+ * Add BBO schema support (#15)
+ * Add list of datafile checksums in [`tests/data/checksums.txt`](./tests/data/checksums.txt)
+
+## v0.6.2 (2025-06-03)
+
+ * Fix `StatusMsg` decoding.
+ * Added more message structure tests (#6)
+
+## v0.6.1 (2025-06-02)
+
+ * Update Go dependencies, including fixes for latest  `go-mcp`
+ * Fix `StatMsg` decoding and add tests for it (#14)
+
+## v0.6.0 (2025-05-27)
+
+  * **BREAKING** Rename `Cbbo` to `Cmbp1` per upstream SDK
+    * `RType_Cbbo` becomes `RType_Cmbp1`
+    * `Schema_Cbbo` becomes `Schema_Cmbp1` which requests `cmbp-1`
+    * `CbboMsg` becomes `Cmbp1Msg`
+    * `Visitor.OnCbbo` becomes `Visitor.OnCmbp1`
+
+  * Update from `DBEQ.MINI` to `EQUS.MINI`
+  * Added `task test-all`
+  * Added new constants and enums up to DBN `0.34.0`:
+    * `UNDEF_TIMESTAMP`, `Action_None`, `InstrumentClass_CommoditySpot`, `Condition_Intraday`
+    * `MatchAlgorithm_TimeProRata`, `MatchAlgorithm_InstitutionalPrioritization`
+    * `StatType_Volatility`, `StatType_Delta`, `StatType_UncrossingPrice`
+
 ## v0.5.0 (2025-04-01)
 
  * Added `dbn-go-mcp` [MCP server](./cmd/dbn-go-mcp/README.md)

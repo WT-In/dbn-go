@@ -7,6 +7,7 @@ It includes:
  * [`dbn-go-hist`](#dbn-go-hist): a CLI to use the Historical API
  * [`dbn-go-live`](#dbn-go-live): a simple Live API feed handler
  * [`dbn-go-mcp`](#dbn-go-mcp): a LLM Model Context Protocol (MCP) server
+ * [`dbn-go-slurp-docs`](#dbn-go-slurp-docs): a tool to scrape Databento docs for offline use
  * [`dbn-go-tui`](#dbn-go-tui): a TUI for your Databento account
 
 ----
@@ -22,7 +23,7 @@ These tools are available as:
 
  * Docker multi-architecture images on [GitHub's Container Registry](https://github.com/NimbleMarkets/dbn-go/pkgs/container/dbn-go) at `ghcr.io/nimblemarkets/dbn-go`: 
    * Hist query: `docker run -e DATABENTO_API_KEY --rm ghcr.io/nimblemarkets/dbn-go:0.0.12 /usr/local/bin/dbn-go-hist datasets` 
-   * Simple Live feed handler: `docker run -e DATABENTO_API_KEY -v ${pwd}/dbn --rm ghcr.io/nimblemarkets/dbn-go:0.0.12 /usr/local/bin/dbn-go-live -d DBEQ.MINI -s ohlcv-1h -o /dbn/foo.dbn -v -t QQQ SPY`
+   * Simple Live feed handler: `docker run -e DATABENTO_API_KEY -v ${pwd}/dbn --rm ghcr.io/nimblemarkets/dbn-go:0.0.12 /usr/local/bin/dbn-go-live -d EQUS.MINI -s ohlcv-1h -o /dbn/foo.dbn -v -t QQQ SPY`
 
  * Built-from-source to the `./bin` folder with the command `task go-build` (install [Taskfile](https://taskfile.dev)).  
 
@@ -162,7 +163,7 @@ XNAS.ITCH
 XNYS.PILLAR
 XPSX.ITCH
 
-$ dbn-go-hist schemas -d DBEQ.MINI --json
+$ dbn-go-hist schemas -d EQUS.MINI --json
 ["mbo","mbp-1","mbp-10","tbbo","trades","ohlcv-1s","ohlcv-1m","ohlcv-1h","ohlcv-1d","definition","status"]
 ```
 
@@ -191,7 +192,7 @@ usage: dbn-go-live -d <dataset> -s <schema> [opts] symbol1 symbol2 ...
 
 Simple invocation:
 ```
-$ dbn-go-live -d DBEQ.MINI -s ohlcv-1h -o foo.dbn -v -t QQQ SPY 
+$ dbn-go-live -d EQUS.MINI -s ohlcv-1h -o foo.dbn -v -t QQQ SPY 
 ```
 
 Simple Docker invocation:
@@ -201,7 +202,7 @@ $ docker run -it --rm \
     -e DATABENTO_API_KEY \
     -v ${pwd}/dbn \
     ghcr.io/nimblemarkets/dbn-go:0.0.11 \
-    /usr/local/bin/dbn-go-live -d DBEQ.MINI -s ohlcv-1h -o /dbn/foo.dbn -v -t QQQ SPY 
+    /usr/local/bin/dbn-go-live -d EQUS.MINI -s ohlcv-1h -o /dbn/foo.dbn -v -t QQQ SPY 
 ```
 
 ----
@@ -211,6 +212,97 @@ $ docker run -it --rm \
 `dbn-go-mcp` is a [Model Context Protocol (MCP)](https://www.anthropic.com/news/model-context-protocol) for Databento services.  This allows tools like [Claude Desktop](https://claude.ai/download) to query Databento in LLM tasks. 
 
 This tool has [it's own README](./dbn-go-mcp/README.md) which describes it and explores some usage.
+
+----
+
+## `dbn-go-slurp-docs`
+
+`dbn-go-slurp-docs` is a tool to scrape the Databento documentation website and generate a coding-agent-focused documentation corpus. It uses Chrome/Chromium to fetch pages and extract content including code examples in multiple languages (Python, Rust, C++, C).
+
+```
+$ dbn-go-slurp-docs --help
+
+Usage of dbn-go-slurp-docs:
+  -delay duration
+        Base delay between requests (default 3s)
+  -fetch
+        Fetch page content (requires Chrome)
+  -generate-sitemap
+        Generate sitemap from Databento docs (requires Chrome)
+  -no-resume
+        Don't resume from previous run
+  -output string
+        Output directory for documentation corpus (default "docs-databento")
+  -v    Verbose logging
+```
+
+### Usage
+
+The tool works in two phases:
+
+**1. Generate the sitemap** (requires Chrome):
+```sh
+dbn-go-slurp-docs -generate-sitemap docs-databento
+```
+
+**2. Fetch and process documentation** (requires Chrome):
+```sh
+dbn-go-slurp-docs -fetch docs-databento
+```
+
+Or combine both steps:
+```sh
+dbn-go-slurp-docs -generate-sitemap -fetch docs-databento
+```
+
+### Output Structure
+
+The tool creates a structured documentation corpus:
+
+```
+docs-databento/
+├── README.md                    # Root index with all sections
+├── databento-docs-sitemap.xml.gz # Compressed sitemap
+├── .slurp-progress.json         # Progress tracking for resume
+├── schemas-and-data-formats/
+│   ├── index.md                 # Section index
+│   ├── ohlcv.md                 # Individual page summaries
+│   └── mbo.md
+├── api-reference-historical/
+│   ├── index.md
+│   └── ...
+└── ...
+```
+
+Each page summary includes:
+- **Overview**: Brief description of the topic
+- **Contents**: Table of contents from headings
+- **Code Examples**: Organized by language (Python, Rust, C++, C, HTTP)
+- **Key Concepts**: Important terminology
+- **Developer Notes**: Usage patterns and integration points
+
+### Resume Support
+
+The tool supports resumable fetching. If interrupted, run again with the same output directory to continue where it left off:
+
+```sh
+dbn-go-slurp-docs -fetch docs-databento          # Interrupted
+dbn-go-slurp-docs -fetch docs-databento          # Resumes automatically
+```
+
+Use `-no-resume` to start fresh:
+```sh
+dbn-go-slurp-docs -fetch -no-resume docs-databento
+```
+
+### Chrome Path
+
+The tool auto-detects Chrome/Chromium on macOS and Linux. To specify a custom path:
+
+```sh
+export CHROME_PATH=/path/to/chrome
+dbn-go-slurp-docs -fetch docs-databento
+```
 
 ----
 

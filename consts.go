@@ -9,10 +9,18 @@ package dbn
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 )
 
-// Side
+///////////////////////////////////////////////////////////////////////////////
+
+// The sentinel value for an unset or null timestamp.
+const UNDEF_TIMESTAMP uint64 = math.MaxUint64
+
+///////////////////////////////////////////////////////////////////////////////
+
+// Side is a side of the market. The side of the market for resting orders, or the side of the aggressor for trades.
 type Side uint8
 
 const (
@@ -24,7 +32,11 @@ const (
 	Side_None Side = 'N'
 )
 
-// Action
+// Action is an order event or order book operation.
+//
+// For example usage see:
+// - https://databento.com/docs/examples/order-book/order-actions
+// - https://databento.com/docs/examples/order-book/order-tracking
 type Action uint8
 
 const (
@@ -40,6 +52,8 @@ const (
 	Action_Add Action = 'A'
 	// Reset the book; clear all orders for an instrument.
 	Action_Clear Action = 'R'
+	// Has no effect on the book, but may carry `flags` or other information.
+	Action_None Action = 'N'
 )
 
 // InstrumentClass
@@ -64,6 +78,8 @@ const (
 	InstrumentClass_OptionSpread InstrumentClass = 'T'
 	// A foreign exchange spot.
 	InstrumentClass_FxSpot InstrumentClass = 'X'
+	// A commodity spot.
+	InstrumentClass_CommoditySpot InstrumentClass = 'Y'
 )
 
 func (i InstrumentClass) IsOption() bool {
@@ -97,9 +113,15 @@ const (
 	MatchAlgorithm_FifoTopLmm MatchAlgorithm = 'S'
 	// Like [`Self::ThresholdProRata`] but includes a special priority to LMMs.
 	MatchAlgorithm_ThresholdProRataLmm MatchAlgorithm = 'Q'
-	// Special variant used only for Eurodollar futures on CME. See
-	// [CME documentation](https://www.cmegroup.com/confluence/display/EPICSANDBOX/Supported+Matching+Algorithms#SupportedMatchingAlgorithms-Pro-RataAllocationforEurodollarFutures).
+	// Special variant used only for Eurodollar futures on CME.
 	MatchAlgorithm_EurodollarFutures MatchAlgorithm = 'Y'
+	// Trade quantity is shared between all orders at the best price. Orders with the
+	// highest time priority receive a higher matched quantity.
+	MatchAlgorithm_TimeProRata MatchAlgorithm = 'P'
+	// A two-pass FIFO algorithm. The first pass fills the Institutional Group the aggressing
+	// order is associated with. The second pass matches orders without an Institutional Group
+	// association. See [CME documentation](https://cmegroupclientsite.atlassian.net/wiki/spaces/EPICSANDBOX/pages/457217267#InstitutionalPrioritizationMatchAlgorithm).
+	MatchAlgorithm_InstitutionalPrioritization MatchAlgorithm = 'V'
 )
 
 // UserDefinedInstrument
@@ -273,7 +295,7 @@ const (
 	RType_System          RType = 0x17 // Denotes a non-error message from the gateway. Also used for heartbeats.
 	RType_Statistics      RType = 0x18 // Denotes a statistics record from the publisher (not calculated by Databento).
 	RType_Mbo             RType = 0xA0 // Denotes a market by order record.
-	RType_Cbbo            RType = 0xB1 // Denotes a consolidated best bid and offer record.
+	RType_Cmbp1           RType = 0xB1 // Denotes a consolidated best bid and offer record.
 	RType_Cbbo1S          RType = 0xC0 // Denotes a consolidated best bid and offer record subsampled on a one-second interval.
 	RType_Cbbo1M          RType = 0xC1 // Denotes a consolidated best bid and offer record subsampled on a one-minute interval.
 	RType_Tcbbo           RType = 0xC2 // Denotes a consolidated best bid and offer trade record containing the consolidated BBO before the trade.
@@ -319,8 +341,8 @@ func (s RType) String() string {
 		return "statistics"
 	case RType_Mbo:
 		return "mbo"
-	case RType_Cbbo:
-		return "cbbo"
+	case RType_Cmbp1:
+		return "cmbp-1"
 	case RType_Cbbo1S:
 		return "cbbo-1s"
 	case RType_Cbbo1M:
@@ -373,7 +395,7 @@ const (
 	/// Open, high, low, close, and volume at a daily cadence based on the end of the trading session.
 	Schema_OhlcvEod Schema = 13
 	/// Consolidated best bid and offer.
-	Schema_Cbbo Schema = 14
+	Schema_Cmbp1 Schema = 14
 	/// Consolidated best bid and offer subsampled at one-second intervals, in addition to trades.
 	Schema_Cbbo1S Schema = 15
 	/// Consolidated best bid and offer subsampled at one-minute intervals, in addition to trades.
@@ -419,8 +441,8 @@ func (s Schema) String() string {
 		return "imbalance"
 	case Schema_OhlcvEod:
 		return "ohlcv-eod"
-	case Schema_Cbbo:
-		return "cbbo"
+	case Schema_Cmbp1:
+		return "cmbp-1"
 	case Schema_Cbbo1S:
 		return "cbbo-1s"
 	case Schema_Cbbo1M:
@@ -471,8 +493,8 @@ func SchemaFromString(str string) (Schema, error) {
 		return Schema_Imbalance, nil
 	case "ohlcv-eod":
 		return Schema_OhlcvEod, nil
-	case "cbbo":
-		return Schema_Cbbo, nil
+	case "cmbp-1":
+		return Schema_Cmbp1, nil
 	case "cbbo-1s":
 		return Schema_Cbbo1S, nil
 	case "cbbo-1m":
@@ -693,6 +715,7 @@ type StatType uint8
 
 const (
 	/// The price of the first trade of an instrument. `price` will be set.
+	/// `quantity` will be set when provided by the venue.
 	StatType_OpeningPrice StatType = 1
 	/// The probable price of the first trade of an instrument published during pre-
 	/// open. Both `price` and `quantity` will be set.
@@ -724,6 +747,7 @@ const (
 	/// set.
 	StatType_FixingPrice StatType = 10
 	/// The last trade price during a trading session. `price` will be set.
+	/// `quantity` will be set when provided by the venue.
 	StatType_ClosePrice StatType = 11
 	/// The change in price from the close price of the previous trading session to the
 	/// most recent trading session. `price` will be set.
@@ -732,6 +756,15 @@ const (
 	/// `price` will be set to the VWAP while `quantity` will be the traded
 	/// volume.
 	StatType_Vwap StatType = 13
+	// The implied volatility associated with the settlement price. `price` will
+	// be set with the standard precision.
+	StatType_Volatility StatType = 14
+	// The option delta associated with the settlement price. `price` will be set
+	// with the standard precision.
+	StatType_Delta StatType = 15
+	// The auction uncrossing price. This is used for auctions that are neither the official opening auction nor the official closing auction. `price` will be
+	// `quantity` will be set when provided by the venue.
+	StatType_UncrossingPrice StatType = 16
 )
 
 // / The type of [`StatMsg`](crate::record::StatMsg) update.
@@ -890,7 +923,7 @@ const (
 	TriState_Yes TradingEvent = 'Y'
 )
 
-// / How to handle decoding DBN data from a prior version.
+// How to handle decoding DBN data from a prior version.
 type VersionUpgradePolicy uint8
 
 const (
@@ -901,3 +934,169 @@ const (
 	/// simpler.
 	VersionUpgradePolicy_Upgrade VersionUpgradePolicy = 1
 )
+
+///////////////////////////////////////////////////////////////////////////////
+
+// A [`SystemMsg`](crate::SystemMsg) code indicating the type of message from the live subscription gateway.
+type SystemCode uint8
+
+const (
+	/// A message sent in the absence of other records to indicate the connection remains open.
+	SystemCode_Heartbeat = 0
+	/// An acknowledgement of a subscription request.
+	SystemCode_SubscriptionAck = 1
+	/// The gateway has detected this session is falling behind real-time.
+	SystemCode_SlowReaderWarning = 2
+	/// Indicates a replay subscription has caught up with real-time data.
+	SystemCode_ReplayCompleted = 3
+	/// Signals that all records for interval-based schemas have been published for the given timestamp.
+	SystemCode_EndOfInterval = 4
+	/// No system code was specified or this record was upgraded from a version 1 struct where the code field didn't exist.
+	SystemCode_Unset = 255
+	// Heartbeat string
+	SystemCodeString_Heartbeat = "HEARTBEAT"
+)
+
+// Returns the string representation of the SystemCode, or empty string if unknown.
+func (s SystemCode) String() string {
+	switch s {
+	case SystemCode_Heartbeat:
+		return SystemCodeString_Heartbeat
+	case SystemCode_SubscriptionAck:
+		return "SUBSCRIPTION_ACK"
+	case SystemCode_SlowReaderWarning:
+		return "SLOW_READER_WARNING"
+	case SystemCode_ReplayCompleted:
+		return "REPLAY_COMPLETED"
+	case SystemCode_EndOfInterval:
+		return "END_OF_INTERVAL"
+	case SystemCode_Unset:
+		return "UNSET"
+	default:
+		return ""
+	}
+}
+
+// SystemCodeFromString converts a string to an SystemCode.
+// Returns an error if the string is unknown.
+func SystemCodeFromString(str string) (SystemCode, error) {
+	str = strings.ToUpper(str)
+	switch str {
+	case SystemCodeString_Heartbeat:
+		return SystemCode_Heartbeat, nil
+	case "SUBSCRIPTION_ACK":
+		return SystemCode_SubscriptionAck, nil
+	case "SLOW_READER_WARNING":
+		return SystemCode_SlowReaderWarning, nil
+	case "REPLAY_COMPLETED":
+		return SystemCode_ReplayCompleted, nil
+	case "END_OF_INTERVAL":
+		return SystemCode_EndOfInterval, nil
+	case "UNSET":
+		return SystemCode_Unset, nil
+	default:
+		return SystemCode_Unset, fmt.Errorf("unknown system code: '%s'", str)
+	}
+}
+
+func (s SystemCode) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.String())
+}
+
+func (s *SystemCode) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+	js, err := SystemCodeFromString(str)
+	if err != nil {
+		return err
+	}
+	*s = js
+	return nil
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+// An error code from the live subscription gateway.
+type ErrorCode uint8
+
+const (
+	/// The authentication step failed.
+	ErrorCode_AuthFailed = 1
+	/// The user account or API key were deactivated.
+	ErrorCode_ApiKeyDeactivated = 2
+	/// The user has exceeded their open connection limit.
+	ErrorCode_ConnectionLimitExceeded = 3
+	/// One or more symbols failed to resolve.
+	ErrorCode_SymbolResolutionFailed = 4
+	/// There was an issue with a subscription request (other than symbol resolution).
+	ErrorCode_InvalidSubscription = 5
+	/// An error occurred in the gateway.
+	ErrorCode_InternalError = 6
+	/// No error code was specified or this record was upgraded from a version 1 struct where the code field didn't exist.
+	ErrorCode_Unset = 255
+)
+
+// Returns the string representation of the ErrorCode, or empty string if unknown.
+func (e ErrorCode) String() string {
+	switch e {
+	case ErrorCode_AuthFailed:
+		return "AUTH_FAILED"
+	case ErrorCode_ApiKeyDeactivated:
+		return "API_KEY_DEACTIVATED"
+	case ErrorCode_ConnectionLimitExceeded:
+		return "CONNECTION_LIMIT_EXCEEDED"
+	case ErrorCode_SymbolResolutionFailed:
+		return "SYMBOL_RESOLUTION_FAILED"
+	case ErrorCode_InvalidSubscription:
+		return "INVALID_SUBSCRIPTION"
+	case ErrorCode_InternalError:
+		return "INTERNAL_ERROR"
+	case ErrorCode_Unset:
+		return "UNSET"
+	default:
+		return ""
+	}
+}
+
+// ErrorCodeFromString converts a string to an ErrorCode.
+// Returns an error if the string is unknown.
+func ErrorCodeFromString(str string) (ErrorCode, error) {
+	str = strings.ToUpper(str)
+	switch str {
+	case "AUTH_FAILED":
+		return ErrorCode_AuthFailed, nil
+	case "API_KEY_DEACTIVATED":
+		return ErrorCode_ApiKeyDeactivated, nil
+	case "CONNECTION_LIMIT_EXCEEDED":
+		return ErrorCode_ConnectionLimitExceeded, nil
+	case "SYMBOL_RESOLUTION_FAILED":
+		return ErrorCode_SymbolResolutionFailed, nil
+	case "INVALID_SUBSCRIPTION":
+		return ErrorCode_InvalidSubscription, nil
+	case "INTERNAL_ERROR":
+		return ErrorCode_InternalError, nil
+	case "UNSET":
+		return ErrorCode_Unset, nil
+	default:
+		return ErrorCode_Unset, fmt.Errorf("unknown error code: '%s'", str)
+	}
+}
+
+func (e ErrorCode) MarshalJSON() ([]byte, error) {
+	return json.Marshal(e.String())
+}
+
+func (e *ErrorCode) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+	js, err := ErrorCodeFromString(str)
+	if err != nil {
+		return err
+	}
+	*e = js
+	return nil
+}

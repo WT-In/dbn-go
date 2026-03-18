@@ -19,6 +19,7 @@
 package dbn
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 
@@ -57,13 +58,22 @@ func (rtype RType) IsCompatibleWith(rtype2 RType) bool {
 	if rtype == rtype2 {
 		return true
 	}
-	// Otherwise they are compatible if they are both candles
-	return rtype.IsCandle() && rtype2.IsCandle()
+	// Otherwise they are compatible if they are both candles or both BBO
+	return (rtype.IsCandle() && rtype2.IsCandle()) || (rtype.IsBbo() && rtype2.IsBbo())
 }
 
 func (rtype RType) IsCandle() bool {
 	switch rtype {
 	case RType_Ohlcv1S, RType_Ohlcv1M, RType_Ohlcv1H, RType_Ohlcv1D, RType_OhlcvEod, RType_OhlcvDeprecated:
+		return true
+	default:
+		return false
+	}
+}
+
+func (rtype RType) IsBbo() bool {
+	switch rtype {
+	case RType_Bbo1S, RType_Bbo1M:
 		return true
 	default:
 		return false
@@ -251,10 +261,10 @@ type MboMsg struct {
 	Price     int64   `json:"price" csv:"price"`             // The order price expressed as a signed integer where every 1 unit corresponds to 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
 	Size      uint32  `json:"size" csv:"size"`               // The order quantity.
 	Flags     uint8   `json:"flags" csv:"flags"`             // A bit field indicating event end, message characteristics, and data quality. See [`enums::flags`](crate::enums::flags) for possible values.
-	ChannelID uint8   `json:"channel_id" csv:"channel_id"`   // A channel ID within the venue.
-	Action    byte    `json:"action" csv:"action"`           // The event action. Can be **A**dd, **C**ancel, **M**odify, clea**R**,  **T**rade, or **F**ill.
+	ChannelID uint8   `json:"channel_id" csv:"channel_id"`   // The channel ID assigned by Databento as an incrementing integer starting at zero.
+	Action    byte    `json:"action" csv:"action"`           // The event action. Can be **A**dd, **C**ancel, **M**odify, clea**R**,  **T**rade, **F**ill, or **NN**one.
 	Side      byte    `json:"side" csv:"side"`               // The side that initiates the event. Can be **A**sk for a sell order (or sell aggressor in a trade), **B**id for a buy order (or buy aggressor in a trade), or **N**one where no side is specified by the original source.
-	TsRecv    uint64  `json:"ts_recv" csv:"ts_recv"`         // The capture-server-received timestamp expressed as number of nanoseconds since the UNIX epoch.
+	TsRecv    uint64  `json:"ts_recv" csv:"ts_recv"`         // The capture-server-received timestamp expressed as the number of nanoseconds since the UNIX epoch.
 	TsInDelta int32   `json:"ts_in_delta" csv:"ts_in_delta"` // The delta of `ts_recv - ts_exchange_send`, max 2 seconds.
 	Sequence  uint32  `json:"sequence" csv:"sequence"`       // The message sequence number assigned at the venue.
 }
@@ -321,7 +331,6 @@ type Mbp1Msg struct {
 	TsInDelta int32      `json:"ts_in_delta" csv:"ts_in_delta"` // The delta of `ts_recv - ts_exchange_send`, max 2 seconds.
 	Sequence  uint32     `json:"sequence" csv:"sequence"`       // The message sequence number assigned at the venue.
 	Level     BidAskPair `json:"levels" csv:"levels"`           // The top of the order book.
-
 }
 
 const Mbp1Msg_Size = RHeader_Size + 64
@@ -377,7 +386,9 @@ func (r *Mbp1Msg) Fill_Json(val *fastjson.Value, header *RHeader) error {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type CbboMsg struct {
+// Consolidated market by price implementation with a known book depth of 1. The record of the
+// [`Cmbp1`](crate::Schema::Cmbp1) schema.
+type Cmbp1Msg struct {
 	Header    RHeader                `json:"hd" csv:"hd"`                         // The record header.
 	Price     int64                  `json:"price" csv:"price"`                   // The order price expressed as a signed integer where every 1 unit corresponds to 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
 	Size      uint32                 `json:"size" csv:"size"`                     // The order quantity.
@@ -391,19 +402,19 @@ type CbboMsg struct {
 	Level     ConsolidatedBidAskPair `json:"levels" csv:"levels"`                 // The top of the order book.
 }
 
-const CbboMsg_Size = RHeader_Size + 32 + ConsolidatedBidAskPair_Size
+const Cmbp1Msg_Size = RHeader_Size + 32 + ConsolidatedBidAskPair_Size
 
-func (*CbboMsg) RType() RType {
-	return RType_Cbbo // TODO
+func (*Cmbp1Msg) RType() RType {
+	return RType_Cmbp1 // TODO
 }
 
-func (*CbboMsg) RSize() uint16 {
-	return CbboMsg_Size
+func (*Cmbp1Msg) RSize() uint16 {
+	return Cmbp1Msg_Size
 }
 
-func (r *CbboMsg) Fill_Raw(b []byte) error {
-	if len(b) < CbboMsg_Size {
-		return unexpectedBytesError(len(b), CbboMsg_Size)
+func (r *Cmbp1Msg) Fill_Raw(b []byte) error {
+	if len(b) < Cmbp1Msg_Size {
+		return unexpectedBytesError(len(b), Cmbp1Msg_Size)
 	}
 	err := r.Header.Fill_Raw(b[0:RHeader_Size])
 	if err != nil {
@@ -422,7 +433,7 @@ func (r *CbboMsg) Fill_Raw(b []byte) error {
 	return nil
 }
 
-func (r *CbboMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
+func (r *Cmbp1Msg) Fill_Json(val *fastjson.Value, header *RHeader) error {
 	r.Header = *header
 	r.Price = fastjson_GetInt64FromString(val, "price")
 	r.Size = uint32(val.GetUint("size"))
@@ -742,7 +753,7 @@ func (r *SymbolMappingMsg) Fill_Json(val *fastjson.Value, header *RHeader) error
 type ErrorMsg struct {
 	Header RHeader                `json:"hd" csv:"hd"`           // The common header.
 	Error  [ErrorMsg_ErrSize]byte `json:"err" csv:"err"`         // The error message.
-	Code   uint8                  `json:"code" csv:"code"`       // The error code. Currently unused.
+	Code   ErrorCode              `json:"code" csv:"code"`       // The error code.
 	IsLast uint8                  `json:"is_last" csv:"is_last"` // Sometimes multiple errors are sent together. This field will be non-zero for the last error.
 }
 
@@ -767,7 +778,7 @@ func (r *ErrorMsg) Fill_Raw(b []byte) error {
 	}
 	body := b[RHeader_Size:] // slice of just the body
 	copy(r.Error[:], body[:ErrorMsg_ErrSize])
-	r.Code = body[ErrorMsg_ErrSize]
+	r.Code = ErrorCode(body[ErrorMsg_ErrSize])
 	r.IsLast = body[ErrorMsg_ErrSize+1]
 	return nil
 }
@@ -775,7 +786,7 @@ func (r *ErrorMsg) Fill_Raw(b []byte) error {
 func (r *ErrorMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
 	r.Header = *header
 	copy(r.Error[:], val.GetStringBytes("err"))
-	r.Code = uint8(val.GetUint("code"))
+	r.Code = ErrorCode(uint8(val.GetUint("code")))
 	r.IsLast = uint8(val.GetUint("is_last"))
 	return nil
 }
@@ -785,7 +796,7 @@ func (r *ErrorMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
 type SystemMsg struct {
 	Header  RHeader                 `json:"hd" csv:"hd"`     // The common header.
 	Message [SystemMsg_MsgSize]byte `json:"msg" csv:"msg"`   // The message from the Databento Live Subscription Gateway (LSG).
-	Code    uint8                   `json:"code" csv:"code"` // The type of system message. Currently unused.
+	Code    SystemCode              `json:"code" csv:"code"` // The type of system message.
 }
 
 const SystemMsg_MsgSize = 303
@@ -809,15 +820,28 @@ func (r *SystemMsg) Fill_Raw(b []byte) error {
 	}
 	body := b[RHeader_Size:] // slice of just the body
 	copy(r.Message[:], body[:SystemMsg_MsgSize])
-	r.Code = body[SystemMsg_MsgSize]
+	r.Code = SystemCode(body[SystemMsg_MsgSize])
 	return nil
 }
 
 func (r *SystemMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
 	r.Header = *header
 	copy(r.Message[:], val.GetStringBytes("msg"))
-	r.Code = uint8(val.GetUint("code"))
+	r.Code = SystemCode(uint8(val.GetUint("code")))
 	return nil
+}
+
+// IsHeartbeat checks if the system message is a heartbeat.
+// For fullest compatibility, it falls back to a string check
+func (r *SystemMsg) IsHeartbeat() bool {
+	if r.Code == SystemCode_Heartbeat {
+		return true
+	}
+	// Fallback to string check for backwards compatibility
+	if bytes.Equal(r.Message[:], []byte(SystemCodeString_Heartbeat)) {
+		return true
+	}
+	return false
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -833,7 +857,7 @@ type StatMsg struct {
 	Sequence     uint32   `json:"sequence" csv:"sequence"`           // The message sequence number assigned at the venue.
 	TsInDelta    int32    `json:"ts_in_delta" csv:"ts_in_delta"`     // The delta of `ts_recv - ts_exchange_send`, max 2 seconds.
 	StatType     uint16   `json:"stat_type" csv:"stat_type"`         // The type of statistic value contained in the message. Refer to the [`StatType`](crate::enums::StatType) for variants.
-	ChannelID    uint16   `json:"channel_id" csv:"channel_id"`       // A channel ID within the venue.
+	ChannelID    uint16   `json:"channel_id" csv:"channel_id"`       // The channel ID assigned by Databento as an incrementing integer starting at zero.
 	UpdateAction uint8    `json:"update_action" csv:"update_action"` // Indicates if the statistic is newly added (1) or deleted (2). (Deleted is only used with some stat types)
 	StatFlags    uint8    `json:"stat_flags" csv:"stat_flags"`       // Additional flags associate with certain stat types.
 	Reserved     [6]uint8 // Filler for alignment
@@ -865,7 +889,7 @@ func (r *StatMsg) Fill_Raw(b []byte) error {
 	r.Sequence = binary.LittleEndian.Uint32(body[28:32])
 	r.TsInDelta = int32(binary.LittleEndian.Uint32(body[32:36]))
 	r.StatType = binary.LittleEndian.Uint16(body[36:38])
-	r.ChannelID = binary.LittleEndian.Uint16(body[39:40])
+	r.ChannelID = binary.LittleEndian.Uint16(body[38:40])
 	r.UpdateAction = body[40]
 	r.StatFlags = body[41]
 	return nil
@@ -921,12 +945,12 @@ func (r *StatusMsg) Fill_Raw(b []byte) error {
 	}
 	body := b[RHeader_Size:] // slice of just the body
 	r.TsRecv = binary.LittleEndian.Uint64(body[0:8])
-	r.Action = binary.LittleEndian.Uint16(body[8:9])
-	r.Reason = binary.LittleEndian.Uint16(body[9:10])
-	r.TradingEvent = binary.LittleEndian.Uint16(body[10:11])
-	r.IsTrading = body[11]
-	r.IsQuoting = body[12]
-	r.IsShortSellRestricted = body[13]
+	r.Action = binary.LittleEndian.Uint16(body[8:10])
+	r.Reason = binary.LittleEndian.Uint16(body[10:12])
+	r.TradingEvent = binary.LittleEndian.Uint16(body[12:14])
+	r.IsTrading = body[14]
+	r.IsQuoting = body[15]
+	r.IsShortSellRestricted = body[16]
 	return nil
 }
 
@@ -939,6 +963,79 @@ func (r *StatusMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
 	r.IsTrading = uint8(val.GetUint("is_trading"))
 	r.IsQuoting = uint8(val.GetUint("is_quoting"))
 	r.IsShortSellRestricted = uint8(val.GetUint("is_short_sell_restricted"))
+	return nil
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+// BboMsg is a Best Bid and Offer record subsampled on a 1-second or 1-minute interval.
+// It provides the last best bid, best offer, and sale at the specified interval.
+type BboMsg struct {
+	Header    RHeader    `json:"hd" csv:"hd"`                 // The common header.
+	Price     int64      `json:"price" csv:"price"`           // The last trade price where every 1 unit corresponds to 1e-9, i.e. 1/1,000,000,000 or 0.000000001. Will be UNDEF_PRICE if there was no last trade in the session.
+	Size      uint32     `json:"size" csv:"size"`             // The last trade quantity. Will be 0 if there was no last trade in the session.
+	Reserved1 byte       `json:"_reserved1" csv:"_reserved1"` // Reserved for future use.
+	Side      byte       `json:"side" csv:"side"`             // The side that initiated the last trade. Can be Ask for a sell aggressor in a trade, Bid for a buy aggressor in a trade, or None where no side is specified.
+	Flags     uint8      `json:"flags" csv:"flags"`           // A bit field indicating event end, message characteristics, and data quality.
+	Reserved2 byte       `json:"_reserved2" csv:"_reserved2"` // Reserved for future use.
+	TsRecv    uint64     `json:"ts_recv" csv:"ts_recv"`       // The end timestamp of the interval, clamped to the second/minute boundary, expressed as the number of nanoseconds since the UNIX epoch.
+	Reserved3 [4]byte    `json:"_reserved3" csv:"_reserved3"` // Reserved for future use.
+	Sequence  uint32     `json:"sequence" csv:"sequence"`     // The message sequence number assigned at the venue of the last update.
+	Level     BidAskPair `json:"levels" csv:"levels"`         // The bid and ask prices and sizes at the top level.
+}
+
+const BboMsg_Size = RHeader_Size + 64
+
+func (*BboMsg) RType() RType {
+	// Return a generic BBO RType, similar to how OhlcvMsg returns RType_OhlcvEod
+	return RType_Bbo1S
+}
+
+func (*BboMsg) RSize() uint16 {
+	return BboMsg_Size
+}
+
+func (r *BboMsg) Fill_Raw(b []byte) error {
+	if len(b) < BboMsg_Size {
+		return unexpectedBytesError(len(b), BboMsg_Size)
+	}
+	err := r.Header.Fill_Raw(b[0:RHeader_Size])
+	if err != nil {
+		return err
+	}
+	body := b[RHeader_Size:]
+
+	r.Price = int64(binary.LittleEndian.Uint64(body[0:8]))
+	r.Size = binary.LittleEndian.Uint32(body[8:12])
+	// Reserved1 12
+	r.Side = body[13]
+	r.Flags = body[14]
+	// Reserved2 15
+	r.TsRecv = binary.LittleEndian.Uint64(body[16:24])
+	// Reserved3 24:28
+	r.Sequence = binary.LittleEndian.Uint32(body[28:32])
+	r.Level.Fill_Raw(body[32 : 32+BidAskPair_Size])
+	return nil
+}
+
+func (r *BboMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
+	r.Header = *header
+	r.Price = fastjson_GetInt64FromString(val, "price")
+	r.Size = uint32(val.GetUint("size"))
+	r.Side = byte(val.Get("side").String()[1]) // Get the first character from the JSON string
+	r.Flags = uint8(val.GetUint("flags"))
+	r.TsRecv = fastjson_GetUint64FromString(val, "ts_recv")
+	r.Sequence = uint32(val.GetUint("sequence"))
+
+	levels := val.Get("levels")
+	if levels != nil {
+		r.Level.BidPx = fastjson_GetInt64FromString(levels, "bid_px")
+		r.Level.AskPx = fastjson_GetInt64FromString(levels, "ask_px")
+		r.Level.BidSz = uint32(levels.GetUint("bid_sz"))
+		r.Level.AskSz = uint32(levels.GetUint("ask_sz"))
+		r.Level.BidCt = uint32(levels.GetUint("bid_ct"))
+		r.Level.AskCt = uint32(levels.GetUint("ask_ct"))
+	}
 	return nil
 }
 
