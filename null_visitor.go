@@ -35,10 +35,6 @@ func (v *NullVisitor) OnBbo(record *BboMsg) error {
 	return nil
 }
 
-func (v *NullVisitor) OnTcbbo(record *TcbboMsg) error {
-	return nil
-}
-
 func (v *NullVisitor) OnImbalance(record *ImbalanceMsg) error {
 	return nil
 }

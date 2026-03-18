@@ -90,10 +90,6 @@ func (v *JsonWriterVisitor) OnBbo(record *dbn.BboMsg) error {
 	return WriteAsJson(record, v.writer)
 }
 
-func (v *JsonWriterVisitor) OnTcbbo(record *dbn.TcbboMsg) error {
-	return WriteAsJson(record, v.writer)
-}
-
 func (v *JsonWriterVisitor) OnImbalance(record *dbn.ImbalanceMsg) error {
 	return WriteAsJson(record, v.writer)
 }
