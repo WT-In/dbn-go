@@ -116,3 +116,44 @@ func databentoPostFormRequest(urlStr string, apiKey string, form url.Values, acc
 
 	return body, nil
 }
+
+//////////////////////////////////////////////////////////////////////////////
+
+// databentoPostFormStream performs a POST request and returns the response body as an io.ReadCloser
+// for streaming consumption. The caller must close the returned reader.
+// Uses a client with no timeout to support long-running downloads.
+func databentoPostFormStream(urlStr string, apiKey string, form url.Values, accept string) (io.ReadCloser, error) {
+	apiUrl, err := url.Parse(urlStr)
+	if err != nil {
+		return nil, err
+	}
+
+	formBody := strings.NewReader(form.Encode())
+	req, err := http.NewRequest("POST", apiUrl.String(), formBody)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if accept != "" {
+		req.Header.Set("Accept-Encoding", accept)
+	}
+
+	auth := base64.StdEncoding.EncodeToString([]byte(apiKey + ":"))
+	req.Header.Add("Authorization", "Basic "+auth)
+
+	client := &http.Client{Timeout: 0}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	badStatusCode := (resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent)
+	if badStatusCode {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("HTTP %d %s %s", resp.StatusCode, resp.Status, string(body))
+	}
+
+	return resp.Body, nil
+}

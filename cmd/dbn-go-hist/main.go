@@ -619,11 +619,11 @@ var getRangeCmd = &cobra.Command{
 
 		requireBudgetApproval(apiKey, symbols, &jobParams)
 
-		dbnData, err := dbn_hist.GetRange(apiKey, jobParams)
+		reader, err := dbn_hist.GetRangeStream(apiKey, jobParams)
 		requireNoErrorMsg(err, "error getting range")
+		defer reader.Close()
 
-		// Write the output
-		_, err = writer.Write(dbnData)
+		_, err = io.Copy(writer, reader)
 		requireNoErrorMsg(err, "error writing output")
 	},
 }

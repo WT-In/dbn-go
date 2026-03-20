@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -174,10 +175,11 @@ func (s *Server) fetchRangeHandler(ctx context.Context, request mcp.CallToolRequ
 			StypeIn:      p.StypeIn,
 			StypeOut:     stypeOut,
 		}
-		rangeData, err := dbn_hist.GetRange(s.GetApiKey(), jobParams)
+		reader, err := dbn_hist.GetRangeStream(s.GetApiKey(), jobParams)
 		if err != nil {
 			return "", fmt.Errorf("failed to get range: %w", err)
 		}
+		defer reader.Close()
 
 		tmpFile, err := os.CreateTemp("", "dbn-*.dbn.zst")
 		if err != nil {
@@ -186,7 +188,7 @@ func (s *Server) fetchRangeHandler(ctx context.Context, request mcp.CallToolRequ
 		tmpPath := tmpFile.Name()
 		defer os.Remove(tmpPath)
 
-		if _, err := tmpFile.Write(rangeData); err != nil {
+		if _, err := io.Copy(tmpFile, reader); err != nil {
 			_ = tmpFile.Close()
 			return "", fmt.Errorf("failed to write temp file: %w", err)
 		}

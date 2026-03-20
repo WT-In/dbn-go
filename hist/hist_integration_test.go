@@ -11,7 +11,7 @@ import (
 	"time"
 
 	dbn "github.com/WT-In/dbn-go"
-
+	"github.com/klauspost/compress/zstd"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -107,6 +107,45 @@ var _ = Describe("DbnHist", func() {
 			Expect(err).To(BeNil())
 			Expect(resolveResp).ToNot(BeNil())
 			Expect(resolveResp.Mappings).ToNot(BeEmpty())
+		})
+	})
+	Context("timeseries", func() {
+		It("should GetRangeStream and read via DbnScanner", func() {
+			jobParams := SubmitJobParams{
+				Dataset:   "XNAS.ITCH",
+				Symbols:   "AAPL",
+				Schema:    dbn.Schema_Trades,
+				DateRange: DateRange{
+					Start: time.Date(2024, 1, 2, 14, 0, 0, 0, time.UTC),
+					End:   time.Date(2024, 1, 2, 15, 0, 0, 0, time.UTC),
+				},
+				Encoding:    dbn.Encoding_Dbn,
+				Compression: dbn.Compress_ZStd,
+			}
+			reader, err := GetRangeStream(databentoApiKey, jobParams)
+			Expect(err).To(BeNil())
+			Expect(reader).ToNot(BeNil())
+			defer reader.Close()
+
+			zreader, err := zstd.NewReader(reader)
+			Expect(err).To(BeNil())
+			defer zreader.Close()
+
+			scanner := dbn.NewDbnScanner(zreader)
+			metadata, err := scanner.Metadata()
+			Expect(err).To(BeNil())
+			Expect(metadata).ToNot(BeNil())
+			Expect(metadata.Schema).To(Equal(dbn.Schema_Trades))
+
+			recordCount := 0
+			for scanner.Next() {
+				recordCount++
+				if recordCount >= 10 {
+					break
+				}
+			}
+			Expect(scanner.Error()).To(BeNil())
+			Expect(recordCount).To(BeNumerically(">", 0))
 		})
 	})
 })
