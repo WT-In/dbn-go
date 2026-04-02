@@ -5,6 +5,7 @@
 package dbn_test
 
 import (
+	"bytes"
 	"os"
 	"strings"
 
@@ -14,6 +15,28 @@ import (
 )
 
 var _ = Describe("Messages V2", func() {
+	Context("Error v2 messages", func() {
+		It("should have correct size for ErrorMsgV2", func() {
+			// V2: RHeader (16) + 302 + 2
+			Expect(dbn.ErrorMsgV2_ErrSize).To(Equal(302))
+			Expect(dbn.ErrorMsgV2_Size).To(BeEquivalentTo(16 + 302 + 2))
+		})
+
+		It("should be compatible with ErrorMsg alias", func() {
+			// Verify the alias works correctly
+			var msg dbn.ErrorMsg
+			copy(msg.Error[:], "foobar")
+			msg.Code = dbn.ErrorCode_InternalError
+			msg.IsLast = 20
+
+			// Should be assignable to V2 type
+			var v2Msg dbn.ErrorMsgV2 = msg
+			Expect(bytes.Trim(v2Msg.Error[:], "\x00")).To(Equal([]byte("foobar")))
+			Expect(v2Msg.Code).To(Equal(dbn.ErrorCode_InternalError))
+			Expect(v2Msg.IsLast).To(Equal(uint8(20)))
+		})
+	})
+
 	Context("SymbolMapping v2 messages", func() {
 		It("should have correct size for SymbolMappingMsgV2", func() {
 			// V2: RHeader (16) + 16 + 2*71 + 2 = 16 + 16 + 142 + 2 = 176

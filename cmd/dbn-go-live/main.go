@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	dbn "github.com/NimbleMarkets/dbn-go"
@@ -182,6 +183,10 @@ func followStreamDBN(client *dbn_live.LiveClient, outWriter io.Writer) error {
 	// Follow the DBN stream, writing DBN messages to the file
 	for dbnScanner.Next() {
 		recordBytes := dbnScanner.GetLastRecord()[:dbnScanner.GetLastSize()]
+
+		if errMsg, err := dbnScanner.DecodeErrorMsg(); err == nil {
+			return fmt.Errorf("gateway error: %s", strings.TrimRight(string(errMsg.Error[:]), "\x00"))
+		}
 		_, err := outWriter.Write(recordBytes)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to write record: %s\n", err.Error())

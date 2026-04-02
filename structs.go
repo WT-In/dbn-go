@@ -701,47 +701,6 @@ func (r *ImbalanceMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
 	return nil
 }
 
-type ErrorMsg struct {
-	Header RHeader                `json:"hd" csv:"hd"`           // The common header.
-	Error  [ErrorMsg_ErrSize]byte `json:"err" csv:"err"`         // The error message.
-	Code   ErrorCode              `json:"code" csv:"code"`       // The error code.
-	IsLast uint8                  `json:"is_last" csv:"is_last"` // Sometimes multiple errors are sent together. This field will be non-zero for the last error.
-}
-
-const ErrorMsg_ErrSize = 302
-const ErrorMsg_Size = RHeader_Size + ErrorMsg_ErrSize + 2
-
-func (*ErrorMsg) RType() RType {
-	return RType_Error
-}
-
-func (*ErrorMsg) RSize() uint16 {
-	return ErrorMsg_Size
-}
-
-func (r *ErrorMsg) Fill_Raw(b []byte) error {
-	if len(b) < ErrorMsg_Size {
-		return unexpectedBytesError(len(b), ErrorMsg_Size)
-	}
-	err := r.Header.Fill_Raw(b[0:RHeader_Size])
-	if err != nil {
-		return err
-	}
-	body := b[RHeader_Size:] // slice of just the body
-	copy(r.Error[:], body[:ErrorMsg_ErrSize])
-	r.Code = ErrorCode(body[ErrorMsg_ErrSize])
-	r.IsLast = body[ErrorMsg_ErrSize+1]
-	return nil
-}
-
-func (r *ErrorMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
-	r.Header = *header
-	copy(r.Error[:], val.GetStringBytes("err"))
-	r.Code = ErrorCode(uint8(val.GetUint("code")))
-	r.IsLast = uint8(val.GetUint("is_last"))
-	return nil
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 
 type SystemMsg struct {
@@ -926,6 +885,12 @@ func (r *BboMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
 
 ///////////////////////////////////////////////////////////////////////////////
 // Type Aliases for Backward Compatibility
+
+// ErrorMsg is a DBN error message.
+// ErrorMsg is an alias for the current version (V2)
+type ErrorMsg = ErrorMsgV2
+
+const ErrorMsg_Size = ErrorMsgV2_Size
 
 // SymbolMappingMsg is a Databento Symbol Mapping message.
 // This is not a strict byte-layout because StypeInSymbol and StypeOutSymbol have dynamic lengths

@@ -19,7 +19,51 @@ import (
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// SymbolMappingMsgV2 is the DBN version 2 layout.
+// ErrorMsgV2 is the DBN version Protocol Error Message
+type ErrorMsgV2 struct {
+	Header RHeader                  `json:"hd" csv:"hd"`           // The common header.
+	Error  [ErrorMsgV2_ErrSize]byte `json:"err" csv:"err"`         // The error message.
+	Code   ErrorCode                `json:"code" csv:"code"`       // The error code.
+	IsLast uint8                    `json:"is_last" csv:"is_last"` // Sometimes multiple errors are sent together. This field will be non-zero for the last error.
+}
+
+const ErrorMsgV2_ErrSize = 302
+const ErrorMsgV2_Size = RHeader_Size + ErrorMsgV2_ErrSize + 2
+
+func (*ErrorMsgV2) RType() RType {
+	return RType_Error
+}
+
+func (*ErrorMsgV2) RSize() uint16 {
+	return ErrorMsgV2_Size
+}
+
+func (r *ErrorMsgV2) Fill_Raw(b []byte) error {
+	if len(b) < ErrorMsgV2_Size {
+		return unexpectedBytesError(len(b), ErrorMsgV2_Size)
+	}
+	err := r.Header.Fill_Raw(b[0:RHeader_Size])
+	if err != nil {
+		return err
+	}
+	body := b[RHeader_Size:] // slice of just the body
+	copy(r.Error[:], body[:ErrorMsgV2_ErrSize])
+	r.Code = ErrorCode(body[ErrorMsgV2_ErrSize])
+	r.IsLast = body[ErrorMsgV2_ErrSize+1]
+	return nil
+}
+
+func (r *ErrorMsgV2) Fill_Json(val *fastjson.Value, header *RHeader) error {
+	r.Header = *header
+	copy(r.Error[:], val.GetStringBytes("err"))
+	r.Code = ErrorCode(uint8(val.GetUint("code")))
+	r.IsLast = uint8(val.GetUint("is_last"))
+	return nil
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+// SymbolMappingMsgV2 is the DBN version 2 symbol mapping layout.
 // V2 adds StypeIn and StypeOut bytes before each symbol.
 type SymbolMappingMsgV2 struct {
 	Header         RHeader `json:"hd" csv:"hd"`

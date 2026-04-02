@@ -1111,21 +1111,21 @@ type ErrorCode uint8
 
 const (
 	/// The authentication step failed.
-	ErrorCode_AuthFailed = 1
+	ErrorCode_AuthFailed ErrorCode = 1
 	/// The user account or API key were deactivated.
-	ErrorCode_ApiKeyDeactivated = 2
+	ErrorCode_ApiKeyDeactivated ErrorCode = 2
 	/// The user has exceeded their open connection limit.
-	ErrorCode_ConnectionLimitExceeded = 3
+	ErrorCode_ConnectionLimitExceeded ErrorCode = 3
 	/// One or more symbols failed to resolve.
-	ErrorCode_SymbolResolutionFailed = 4
+	ErrorCode_SymbolResolutionFailed ErrorCode = 4
 	/// There was an issue with a subscription request (other than symbol resolution).
-	ErrorCode_InvalidSubscription = 5
+	ErrorCode_InvalidSubscription ErrorCode = 5
 	/// An error occurred in the gateway.
-	ErrorCode_InternalError = 6
+	ErrorCode_InternalError ErrorCode = 6
 	/// A slow client was detected and records were skipped by the gateway to allow catching up.
-	ErrorCode_SkippedRecordsAfterSlowReading = 7
+	ErrorCode_SkippedRecordsAfterSlowReading ErrorCode = 7
 	/// No error code was specified or this record was upgraded from a version 1 struct where the code field didn't exist.
-	ErrorCode_Unset = 255
+	ErrorCode_Unset ErrorCode = 255
 )
 
 // Returns the string representation of the ErrorCode, or empty string if unknown.

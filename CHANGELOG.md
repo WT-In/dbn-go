@@ -2,6 +2,13 @@
 
 ## v0.9.1 (2026-04-02)
 
+  * `ErrorMsg` improvements:
+    * Added `ErrorMsgV1` and `ErrorMsgV2`
+    * Alias `ErrorMsg = ErrorMsgV2`
+    * `DbnScanner` upgrades `ErrorMsgV1` messages to `v2`
+    * Add `dbn.DecodeErrorMsg`
+    * `ErrCode_*` enum constants are now typed as `ErrorCode`
+ * live: `dbn-go-live` handles DBN gateway errors much better (lost before)
  * ci: Fix `--version` information on release builds
 
 ## v0.9.0 (2026-03-28)

@@ -18,13 +18,51 @@ import (
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// ErrorMsgV1 is the DBN version Protocol Error Message
+type ErrorMsgV1 struct {
+	Header RHeader                  `json:"hd" csv:"hd"`   // The common header.
+	Error  [ErrorMsgV1_ErrSize]byte `json:"err" csv:"err"` // The error message.
+}
+
+const ErrorMsgV1_ErrSize = 64
+const ErrorMsgV1_Size = RHeader_Size + ErrorMsgV1_ErrSize
+
+func (*ErrorMsgV1) RType() RType {
+	return RType_Error
+}
+
+func (*ErrorMsgV1) RSize() uint16 {
+	return ErrorMsgV1_Size
+}
+
+func (r *ErrorMsgV1) Fill_Raw(b []byte) error {
+	if len(b) < ErrorMsgV1_Size {
+		return unexpectedBytesError(len(b), ErrorMsgV1_Size)
+	}
+	err := r.Header.Fill_Raw(b[0:RHeader_Size])
+	if err != nil {
+		return err
+	}
+	body := b[RHeader_Size:] // slice of just the body
+	copy(r.Error[:], body[:ErrorMsgV1_ErrSize])
+	return nil
+}
+
+func (r *ErrorMsgV1) Fill_Json(val *fastjson.Value, header *RHeader) error {
+	r.Header = *header
+	copy(r.Error[:], val.GetStringBytes("err"))
+	return nil
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 // SymbolMappingMsgV1 is the DBN version 1 layout.
 // V1 does not have StypeIn/StypeOut fields in the binary format.
 type SymbolMappingMsgV1 struct {
 	Header         RHeader `json:"hd" csv:"hd"`
-	StypeIn        SType   `json:"stype_in" csv:"stype_in"`                 // Always SType_RawSymbol in V1
+	StypeIn        SType   `json:"stype_in" csv:"stype_in"` // Always SType_RawSymbol in V1
 	StypeInSymbol  string  `json:"stype_in_symbol" csv:"stype_in_symbol"`
-	StypeOut       SType   `json:"stype_out" csv:"stype_out"`               // Always SType_RawSymbol in V1
+	StypeOut       SType   `json:"stype_out" csv:"stype_out"` // Always SType_RawSymbol in V1
 	StypeOutSymbol string  `json:"stype_out_symbol" csv:"stype_out_symbol"`
 	StartTs        uint64  `json:"start_ts" csv:"start_ts"`
 	EndTs          uint64  `json:"end_ts" csv:"end_ts"`
@@ -71,3 +109,5 @@ func (r *SymbolMappingMsgV1) Fill_Json(val *fastjson.Value, header *RHeader) err
 	r.EndTs = val.GetUint64("end_ts")
 	return nil
 }
+
+///////////////////////////////////////////////////////////////////////////////

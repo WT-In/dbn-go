@@ -34,6 +34,17 @@ var _ = Describe("Messages V1", func() {
 		})
 	})
 
+	Context("Error v1 messages", func() {
+		It("should have correct size for ErrorMsgV1", func() {
+			// V1: RHeader (16) + 64
+			Expect(dbn.ErrorMsgV1_Size).To(BeEquivalentTo(16 + 64))
+		})
+
+		It("should be smaller than V2 due to shorter symbol strings", func() {
+			Expect(dbn.ErrorMsgV1_Size).To(BeNumerically("<", dbn.ErrorMsgV2_Size))
+		})
+	})
+
 	Context("SymbolMapping v1 messages", func() {
 		It("should have correct size for SymbolMappingMsgV1", func() {
 			// V1: RHeader (16) + 16 + 2*22 = 16 + 16 + 44 = 76

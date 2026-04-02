@@ -84,6 +84,8 @@ var _ = Describe("DbnScanner", func() {
 			Expect(int((&dbn.OhlcvMsg{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
 			Expect(int((&dbn.ImbalanceMsg{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
 			Expect(int((&dbn.ErrorMsg{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
+			Expect(int((&dbn.ErrorMsgV1{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
+			Expect(int((&dbn.ErrorMsgV2{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
 			Expect(int((&dbn.StatMsg{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
 			Expect(int((&dbn.StatMsgV2{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
 			Expect(int((&dbn.StatMsgV3{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
@@ -94,6 +96,8 @@ var _ = Describe("DbnScanner", func() {
 			Expect(int((&dbn.InstrumentDefMsgV3{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
 		})
 	})
+
+	// TODO: we should make a test for Error message upgrades, be we have no test file
 
 	// Version-aware Visit() tests: verify that the scanner upgrades V1/V2 records to V3.
 	Context("version-aware Visit for StatMsg", func() {

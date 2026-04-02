@@ -257,13 +257,14 @@ func (c *LiveClient) Start() error {
 		c.jsonScanner = dbn.NewJsonScanner(c.bufReader)
 	} else {
 		c.dbnScanner = dbn.NewDbnScanner(c.bufReader)
-		_, err := c.dbnScanner.Metadata()
+		metadata, err := c.dbnScanner.Metadata()
 		if err != nil {
 			return fmt.Errorf("failed to get metadata: %v", err)
 		}
-	}
-	if c.config.Verbose {
-		c.logger.Info("[LiveClient.Start] read metadata susccessfully")
+		if c.config.Verbose {
+			c.logger.Info("[LiveClient.Start] read metadata successfully",
+				"version_num", metadata.VersionNum, "len_mappings", len(metadata.Mappings))
+		}
 	}
 
 	return nil
