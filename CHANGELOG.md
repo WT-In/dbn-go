@@ -1,6 +1,16 @@
 # CHANGELOG
 
-## v0.9.0 (unreleased)
+## v0.9.1 (2026-04-02)
+
+ * ci: Fix `--version` information on release builds
+
+## v0.9.0 (2026-03-28)
+
+The release add support for DBN Version 3.
+
+Note that this transitions was made via type aliases for use with the `DbnScanner`.  For example:
+  * `InstrumentDefMsg = InstrumentDefMsgV3`
+  * `StatMsg = StatMsgV3`
 
  * Support for DBN version 3:
    * Handle DBN v3 headers
