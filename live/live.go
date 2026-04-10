@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -43,6 +44,29 @@ const (
 	MAX_STR_LENGTH = 24 * 1024
 )
 
+// deadlineReader wraps net.Conn so each Read sets a fresh read deadline.
+// When ReadTimeout is used, a healthy stream must deliver bytes within timeout
+// on every read (heartbeats fill idle periods per Databento gateway behavior).
+type deadlineReader struct {
+	conn    net.Conn
+	timeout time.Duration
+}
+
+func (r *deadlineReader) Read(p []byte) (int, error) {
+	if err := r.conn.SetReadDeadline(time.Now().Add(r.timeout)); err != nil {
+		return 0, err
+	}
+	return r.conn.Read(p)
+}
+
+func newBufReader(conn net.Conn, readTimeout time.Duration) *bufio.Reader {
+	var r io.Reader = conn
+	if readTimeout > 0 {
+		r = &deadlineReader{conn: conn, timeout: readTimeout}
+	}
+	return bufio.NewReaderSize(r, MAX_STR_LENGTH)
+}
+
 type SystemMsgV1 struct {
 	Msg [SYSTEM_MSG_SIZE_V1]byte `json:"msg"` // The message from the gateway
 }
@@ -72,6 +96,7 @@ type LiveConfig struct {
 	Encoding             dbn.Encoding // nil mean Encoding_Dbn
 	SendTsOut            bool
 	HeartbeatInterval    time.Duration // Heartbeat interval; 0 means use server default
+	ReadTimeout          time.Duration // If > 0, each read fails after this duration with no data
 	SlowReaderBehavior   dbn.SlowReaderBehavior
 	VersionUpgradePolicy dbn.VersionUpgradePolicy
 	Verbose              bool
@@ -158,7 +183,7 @@ func NewLiveClient(config LiveConfig) (*LiveClient, error) {
 	} else {
 		c.conn = conn
 	}
-	c.bufReader = bufio.NewReaderSize(c.conn, MAX_STR_LENGTH)
+	c.bufReader = newBufReader(c.conn, config.ReadTimeout)
 	if c.config.Verbose {
 		c.logger.Info("[LiveClient.NewLiveClient] connected", "dataset", config.Dataset, "hostport", hostPort)
 	}
@@ -249,7 +274,7 @@ func (c *LiveClient) Start() error {
 	}
 
 	if c.bufReader == nil {
-		c.bufReader = bufio.NewReaderSize(c.conn, MAX_STR_LENGTH)
+		c.bufReader = newBufReader(c.conn, c.config.ReadTimeout)
 	}
 
 	// Create a DbnScanner and ensure we get the metadata
