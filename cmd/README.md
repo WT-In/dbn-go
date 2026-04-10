@@ -6,9 +6,15 @@ It includes:
  * [`dbn-go-file`](#dbn-go-file): a CLI to process DBN files
  * [`dbn-go-hist`](#dbn-go-hist): a CLI to use the Historical API
  * [`dbn-go-live`](#dbn-go-live): a simple Live API feed handler
- * [`dbn-go-mcp`](#dbn-go-mcp): a LLM Model Context Protocol (MCP) server
  * [`dbn-go-slurp-docs`](#dbn-go-slurp-docs): a tool to scrape Databento docs for offline use
  * [`dbn-go-tui`](#dbn-go-tui): a TUI for your Databento account
+
+
+There are two [Model Context Protocol (MCP)](https://www.anthropic.com/news/model-context-protocol) servers for Databento services.  This allows tools like [Claude Desktop](https://claude.ai/download) to query Databento Metadata or Claude Code to load market data into a database for querying.  Each tool has their own page:
+ * [`dbn-go-mcp-meta`](#dbn-go-mcp-meta): Metadata-only MCP server (no billing risk)
+ * [`dbn-go-mcp-data`](#dbn-go-mcp-data): Database-Backed Data Ingestion MCP server
+
+----
 
 ----
 
@@ -52,6 +58,7 @@ Available Commands:
 Flags:
   -h, --help      help for dbn-go-file
   -v, --verbose   Verbose output
+      --version   version for dbn-go-file
 
 Use "dbn-go-file [command] --help" for more information about a command.
 ```
@@ -63,10 +70,10 @@ Use "dbn-go-file [command] --help" for more information about a command.
 
 ```sh
 ./dbn_to_parquet.py tests/data/test_data.ohlcv-1s.dbn
-parquet-reader tests/data/test_data.ohlcv-1s.dbn.parquet > py.parquet.txt
+parquet cat tests/data/test_data.ohlcv-1s.dbn.parquet > py.parquet.txt
 
 dbn-go-file parquet tests/data/test_data.ohlcv-1s.dbn
-parquet-reader tests/data/test_data.ohlcv-1s.dbn.parquet > go.parquet.txt
+parquet cat tests/data/test_data.ohlcv-1s.dbn.parquet > go.parquet.txt
 
 diff py.parquet.txt go.parquet.txt
 ```
@@ -135,6 +142,7 @@ Available Commands:
 Flags:
   -h, --help         help for dbn-go-hist
   -k, --key string   Databento API key (or use DATABENT_API_KEY envvar)
+  -v, --version      version for dbn-go-hist
 
 Use "dbn-go-hist [command] --help" for more information about a command.
 ```
@@ -179,7 +187,7 @@ $ dbn-go-hist schemas -d EQUS.MINI --json
 $ dbn-go-live --help
 usage: dbn-go-live -d <dataset> -s <schema> [opts] symbol1 symbol2 ...
 
-  -d, --dataset string          Dataset to subscribe to 
+  -d, --dataset string          Dataset to subscribe to
   -e, --encoding dbn.Encoding   Encoding of the output ('dbn', 'csv', 'json') (default dbn)
   -h, --help                    Show help
   -k, --key string              Databento API key (or set 'DATABENTO_API_KEY' envvar)
@@ -188,6 +196,7 @@ usage: dbn-go-live -d <dataset> -s <schema> [opts] symbol1 symbol2 ...
   -i, --sin dbn.SType           Input SType of the symbols. One of instrument_id, id, instr, raw_symbol, raw, smart, continuous, parent, nasdaq, cms (default raw_symbol)
   -t, --start string            Start time to request as ISO 8601 format (default: now)
   -v, --verbose                 Verbose logging
+      --version                 Show version
 ```
 
 Simple invocation:
@@ -204,14 +213,6 @@ $ docker run -it --rm \
     ghcr.io/nimblemarkets/dbn-go:0.0.11 \
     /usr/local/bin/dbn-go-live -d EQUS.MINI -s ohlcv-1h -o /dbn/foo.dbn -v -t QQQ SPY 
 ```
-
-----
-
-## `dbn-go-mcp`
-
-`dbn-go-mcp` is a [Model Context Protocol (MCP)](https://www.anthropic.com/news/model-context-protocol) for Databento services.  This allows tools like [Claude Desktop](https://claude.ai/download) to query Databento in LLM tasks. 
-
-This tool has [it's own README](./dbn-go-mcp/README.md) which describes it and explores some usage.
 
 ----
 
@@ -234,6 +235,8 @@ Usage of dbn-go-slurp-docs:
   -output string
         Output directory for documentation corpus (default "docs-databento")
   -v    Verbose logging
+  -version
+        Show version
 ```
 
 ### Usage
@@ -319,6 +322,7 @@ usage: ./bin/dbn-go-tui [options]
   -h, --help         Show help
   -k, --key string   Databento API key (or set 'DATABENTO_API_KEY' envvar)
   -l, --limit int    Limit maximum concurrent downloads (default 4)
+      --version      Show version
   
 $ dbn-go-tui
 ```

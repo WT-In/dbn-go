@@ -4,6 +4,7 @@
     <a href="https://github.com/NimbleMarkets/dbn-go/tags"><img src="https://img.shields.io/github/tag/NimbleMarkets/dbn-go.svg" alt="Latest Tag"></a>
     <a href="https://pkg.go.dev/github.com/NimbleMarkets/dbn-go"><img src="https://pkg.go.dev/badge/github.com/NimbleMarkets/dbn-go.svg" alt="Go Reference"></a>
     <a href="https://github.com/NimbleMarkets/dbn-go/blob/main/CODE_OF_CONDUCT.md"><img src="https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg"  alt="Code Of Conduct"></a>
+    <a href="https://NimbleMarkets.github.io/dbn-go/"><img src="https://img.shields.io/badge/docs-book-blue.svg" alt="Documentation"></a>
 </p>
 
 **Golang tooling for Databento's APIs and DBN format**
@@ -52,10 +53,13 @@ Most `dbn-go` [types](./structs.go) and [enums](./consts.go) parallel Databento'
 
 ## Reading DBN Files
 
-If you want to read a homogeneous array of DBN records from a file, use the [`dbn.ReadDBNToSlice`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#ReadDBNToSlice) generic function. We include an `io.Reader` wrapper, [`dbn.MakeCompressedReader`]https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#MakeCompressedReader), that automatically handles `zstd`-named files.  The generic argument dicates which message type to read.
+If you want to read a homogeneous array of DBN records from a file, use the [`dbn.ReadDBNToSlice`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#ReadDBNToSlice) generic function. We include an `io.Reader` wrapper, [`dbn.MakeCompressedReader`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#MakeCompressedReader), that automatically handles `zstd`-named files.  The generic argument dicates which message type to read.
 
 ```go
-file, closer, _ := dbn.MakeCompressedReader("ohlcv-1s.dbn.zstd", false)
+file, closer, err := dbn.MakeCompressedReader("ohlcv-1s.dbn.zstd", false)
+if err != nil {
+    return err
+}
 defer closer.Close()
 records, metadata, err := dbn.ReadDBNToSlice[dbn.OhlcvMsg](file)
 ```
@@ -152,7 +156,8 @@ We include [some tools](./cmd/README.md) to make our lives easier. [Installation
  * [`dbn-go-file`](./cmd/README.md#dbn-go-file): a CLI to process DBN files
  * [`dbn-go-hist`](./cmd/README.md#dbn-go-hist): a CLI to use the Historical API
  * [`dbn-go-live`](./cmd/README.md#dbn-go-live): a simple Live API feed handler
- * [`dbn-go-mcp`](./cmd/README.md#dbn-go-mcp): a LLM Model Context Protocol (MCP) server
+ * [`dbn-go-mcp-meta`](./cmd/README.md#dbn-go-mcp-meta): Metadata-only MCP server (no billing risk)
+ * [`dbn-go-mcp-data`](./cmd/README.md#dbn-go-mcp-data): Database-Backed Data Ingestion MCP server
  * [`dbn-go-slurp-docs`](./cmd/README.md#dbn-go-slurp-docs): a tool to scrape Databento docs for offline use
  * [`dbn-go-tui`](./cmd/README.md#dbn-go-tui): a TUI for your Databento account
 
@@ -170,7 +175,7 @@ Released under the [Apache License, version 2.0](https://www.apache.org/licenses
 
 Portions adapted from [`databento/dbn`](https://github.com/databento/dbn) [`databendo/databento-rs`](https://github.com/databento/databento-rs) under the same Apache license.
 
-Copyright (c) 2024-2025 [Neomantra Corp](https://www.neomantra.com).   
+Copyright (c) 2024-2026 [Neomantra Corp](https://www.neomantra.com).   
 
 ----
 Made with :heart: and :fire: by the team behind [Nimble.Markets](https://nimble.markets).

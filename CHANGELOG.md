@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## v0.9.1 (2026-04-02)
+
+  * `ErrorMsg` improvements:
+    * Added `ErrorMsgV1` and `ErrorMsgV2`
+    * Alias `ErrorMsg = ErrorMsgV2`
+    * `DbnScanner` upgrades `ErrorMsgV1` messages to `v2`
+    * Add `dbn.DecodeErrorMsg`
+    * `ErrCode_*` enum constants are now typed as `ErrorCode`
+ * live: `dbn-go-live` handles DBN gateway errors much better (lost before)
+ * ci: Fix `--version` information on release builds
+
+## v0.9.0 (2026-03-28)
+
+The release add support for DBN Version 3.
+
+Note that this transitions was made via type aliases for use with the `DbnScanner`.  For example:
+  * `InstrumentDefMsg = InstrumentDefMsgV3`
+  * `StatMsg = StatMsgV3`
+
+ * Support for DBN version 3:
+   * Handle DBN v3 headers
+   * Add `InstrumentDefMsgV3` and `StatMsgV3`
+   * `DbnScanner` upgrades messages to `v3`
+   * `JsonScanner` handles `v2` and `v3` JSON files
+ * tui: Upgrade BubbleTea v2
+ 
+## v0.8.10 (2026-03-22)
+
+ * Add support for missing [Authentication Request](https://databento.com/docs/api-reference-live/client-control-messages/authentication-request) fields
+   * `compression`, `pretty_px`, `pretty_ts`, `slow_reader_behavior`
+   * `heartbeat_interval_s` (#17, thanks @hongzhengwang-ondo)
+   * Only send non-default fields on the wire
+
 ## v0.8.9 (2026-03-13)
 
   * [MCP enhancements](./cmd/dbn-go-mcp/README.md)

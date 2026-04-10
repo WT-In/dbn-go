@@ -10,8 +10,8 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 
 // Default buffer size for decoding
-const DEFAULT_DECODE_BUFFER_SIZE = 16 * 1024
-const DEFAULT_SCRATCH_BUFFER_SIZE = 512 // bigger than largest record size
+const DEFAULT_DECODE_BUFFER_SIZE = 64 * 1024
+const DEFAULT_SCRATCH_BUFFER_SIZE = 1024 // bigger than largest record size
 
 // DbnScanner scans a raw DBN stream
 type DbnScanner struct {
@@ -153,6 +153,26 @@ func DbnScannerDecode[R Record, RP RecordPtr[R]](s *DbnScanner) (*R, error) {
 	return rp, nil
 }
 
+// DecodeErrorMsg parses the Scanner's current record as an ErrorMsg (V2 layout).
+// V1 records are automatically upgraded to V2.
+func (s *DbnScanner) DecodeErrorMsg() (*ErrorMsgV2, error) {
+	if s.lastSize <= RHeader_Size {
+		return nil, ErrNoRecord
+	}
+	recordLen := 4 * int(s.lastRecord[0])
+	if s.lastSize < recordLen {
+		return nil, ErrMalformedRecord
+	}
+	if s.metadata == nil {
+		return nil, ErrNoMetadata
+	}
+	rtype := RType(s.lastRecord[1])
+	if !rtype.IsCompatibleWith(RType_Error) {
+		return nil, unexpectedRTypeError(rtype, RType_Error)
+	}
+	return DecodeErrorMsg(s.metadata, s.lastRecord)
+}
+
 // DecodeSymbolMappingMsg parses the Scanner's current record as a `SymbolMappingMsg`.
 // This is outside the DbnScannerDecode function because SymbolMappingMsg.Fill_Raw
 // is two-argum,ent, depending on the DbnScanner's metadata's SymbolCstrLen.
@@ -178,11 +198,51 @@ func (s *DbnScanner) DecodeSymbolMappingMsg() (*SymbolMappingMsg, error) {
 		return nil, unexpectedRTypeError(rtype, rp.RType())
 	}
 
-	err := rp.Fill_Raw(s.lastRecord[0:s.lastSize], s.metadata.SymbolCstrLen)
+	err := SymbolMappingMsgFillRaw(rp, s.lastRecord[0:s.lastSize], s.metadata.SymbolCstrLen)
 	if err != nil {
 		return nil, err
 	}
 	return rp, nil
+}
+
+// DecodeStatMsg parses the Scanner's current record as a StatMsg (V3 layout).
+// V1/V2 records are automatically upgraded to V3 (sign-extending Quantity).
+func (s *DbnScanner) DecodeStatMsg() (*StatMsgV3, error) {
+	if s.lastSize <= RHeader_Size {
+		return nil, ErrNoRecord
+	}
+	recordLen := 4 * int(s.lastRecord[0])
+	if s.lastSize < recordLen {
+		return nil, ErrMalformedRecord
+	}
+	if s.metadata == nil {
+		return nil, ErrNoMetadata
+	}
+	rtype := RType(s.lastRecord[1])
+	if !rtype.IsCompatibleWith(RType_Statistics) {
+		return nil, unexpectedRTypeError(rtype, RType_Statistics)
+	}
+	return DecodeStatMsg(s.metadata, s.lastRecord)
+}
+
+// DecodeInstrumentDefMsg parses the Scanner's current record as an InstrumentDefMsg (V3 layout).
+// V2 records are automatically upgraded to V3. V1 is not supported.
+func (s *DbnScanner) DecodeInstrumentDefMsg() (*InstrumentDefMsgV3, error) {
+	if s.lastSize <= RHeader_Size {
+		return nil, ErrNoRecord
+	}
+	recordLen := 4 * int(s.lastRecord[0])
+	if s.lastSize < recordLen {
+		return nil, ErrMalformedRecord
+	}
+	if s.metadata == nil {
+		return nil, ErrNoMetadata
+	}
+	rtype := RType(s.lastRecord[1])
+	if !rtype.IsCompatibleWith(RType_InstrumentDef) {
+		return nil, unexpectedRTypeError(rtype, RType_InstrumentDef)
+	}
+	return DecodeInstrumentDefMsg(s.metadata, s.lastRecord, s.lastSize)
 }
 
 // Parses the current Record and passes it to the Visitor.
@@ -242,7 +302,7 @@ func (s *DbnScanner) Visit(visitor Visitor) error {
 	case RType_Cmbp1, RType_Cbbo1S, RType_Cbbo1M, RType_Tcbbo:
 		record := Cmbp1Msg{}
 		if err := record.Fill_Raw(s.lastRecord[:Cmbp1Msg_Size]); err != nil {
-			return err
+			return err // TODO: OnError()
 		} else {
 			return visitor.OnCmbp1(&record)
 		}
@@ -256,19 +316,21 @@ func (s *DbnScanner) Visit(visitor Visitor) error {
 		}
 	// Error
 	case RType_Error:
-		record := ErrorMsg{}
-		if err := record.Fill_Raw(s.lastRecord[:ErrorMsg_Size]); err != nil {
-			return err // TODO: OnError()
-		} else {
-			return visitor.OnErrorMsg(&record)
+		if s.metadata == nil {
+			return ErrNoMetadata
 		}
+		record, err := DecodeErrorMsg(s.metadata, s.lastRecord)
+		if err != nil {
+			return err
+		}
+		return visitor.OnErrorMsg(record)
 	// SymbolMapping
 	case RType_SymbolMapping:
 		if s.metadata == nil {
 			return ErrNoMetadata
 		}
 		record := SymbolMappingMsg{}
-		if err := record.Fill_Raw(s.lastRecord[:s.lastSize], s.metadata.SymbolCstrLen); err != nil {
+		if err := SymbolMappingMsgFillRaw(&record, s.lastRecord[:s.lastSize], s.metadata.SymbolCstrLen); err != nil {
 			return err // TODO: OnError()
 		} else {
 			return visitor.OnSymbolMappingMsg(&record)
@@ -281,14 +343,16 @@ func (s *DbnScanner) Visit(visitor Visitor) error {
 		} else {
 			return visitor.OnSystemMsg(&record)
 		}
-	// Statistics
+	// Statistics (version-aware: V1/V2 = 64 bytes, V3 = 80 bytes)
 	case RType_Statistics:
-		record := StatMsg{}
-		if err := record.Fill_Raw(s.lastRecord[:StatMsg_Size]); err != nil {
-			return err // TODO: OnError()
-		} else {
-			return visitor.OnStatMsg(&record)
+		if s.metadata == nil {
+			return ErrNoMetadata
 		}
+		record, err := DecodeStatMsg(s.metadata, s.lastRecord)
+		if err != nil {
+			return err
+		}
+		return visitor.OnStatMsg(record)
 	// Status
 	case RType_Status:
 		record := StatusMsg{}
@@ -306,17 +370,16 @@ func (s *DbnScanner) Visit(visitor Visitor) error {
 			return visitor.OnBbo(&record)
 		}
 
-	// InstrumentDef
+	// InstrumentDef (version-aware: V2 and V3 have different layouts)
 	case RType_InstrumentDef:
 		if s.metadata == nil {
 			return ErrNoMetadata
 		}
-		record := InstrumentDefMsg{}
-		if err := record.Fill_RawWithLen(s.lastRecord[:s.lastSize], s.metadata.SymbolCstrLen); err != nil {
-			return err // TODO: OnError()
-		} else {
-			return visitor.OnInstrumentDefMsg(&record)
+		record, err := DecodeInstrumentDefMsg(s.metadata, s.lastRecord, s.lastSize)
+		if err != nil {
+			return err
 		}
+		return visitor.OnInstrumentDefMsg(record)
 
 	default:
 		return ErrUnknownRType

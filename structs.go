@@ -53,6 +53,30 @@ func fastjson_GetUint64FromString(val *fastjson.Value, key string) uint64 {
 	return fastfloat.ParseUint64BestEffort(string(val.GetStringBytes(key)))
 }
 
+// Decodes a fastjson.Value as int64, tolerant of both quoted strings (V3) and bare numbers (V2).
+func fastjson_GetInt64Tolerant(val *fastjson.Value, key string) int64 {
+	v := val.Get(key)
+	if v == nil {
+		return 0
+	}
+	if v.Type() == fastjson.TypeString {
+		return fastfloat.ParseInt64BestEffort(string(v.GetStringBytes()))
+	}
+	return v.GetInt64()
+}
+
+// Decodes a fastjson.Value as uint64, tolerant of both quoted strings (V3) and bare numbers (V2).
+func fastjson_GetUint64Tolerant(val *fastjson.Value, key string) uint64 {
+	v := val.Get(key)
+	if v == nil {
+		return 0
+	}
+	if v.Type() == fastjson.TypeString {
+		return fastfloat.ParseUint64BestEffort(string(v.GetStringBytes()))
+	}
+	return v.GetUint64()
+}
+
 func (rtype RType) IsCompatibleWith(rtype2 RType) bool {
 	// If they are equal, they are compatible
 	if rtype == rtype2 {
@@ -93,6 +117,10 @@ type RHeader struct {
 }
 
 const RHeader_Size = 16
+
+// Minimum size of SymbolMappingMsg, the size with 0-length c-strings
+// We add 2*SymbolCstrLength to it to get actual size.
+const SymbolMappingMsg_MinSize = RHeader_Size + 16
 
 func (h *RHeader) RSize() uint16 {
 	return RHeader_Size
@@ -675,124 +703,6 @@ func (r *ImbalanceMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// Databento Symbol Mapping Message
-// This is not a strict byte-layout because StypeInSymbol and StypeOutSymbol have dynamic lengths
-// that depend on metadata's SymbolCstrLen.
-type SymbolMappingMsg struct {
-	Header         RHeader `json:"hd" csv:"hd"`                             // The common header.
-	StypeIn        SType   `json:"stype_in" csv:"stype_in"`                 // The input symbology type of `stype_in_symbol`.
-	StypeInSymbol  string  `json:"stype_in_symbol" csv:"stype_in_symbol"`   // The input symbol.
-	StypeOut       SType   `json:"stype_out" csv:"stype_out"`               // The output symbology type of `stype_out_symbol`.
-	StypeOutSymbol string  `json:"stype_out_symbol" csv:"stype_out_symbol"` // The output symbol.
-	StartTs        uint64  `json:"start_ts" csv:"start_ts"`                 // The start of the mapping interval expressed as the number of nanoseconds since the UNIX epoch.
-	EndTs          uint64  `json:"end_ts" csv:"end_ts"`                     // The end of the mapping interval expressed as the number of nanoseconds since the UNIX epoch.
-}
-
-// Minimum size of SymbolMappingMsg, the size with 0-length c-strings
-// We add 2*SymbolCstrLength to it to get actual size.
-const SymbolMappingMsg_MinSize = RHeader_Size + 16
-
-func (*SymbolMappingMsg) RType() RType {
-	return RType_SymbolMapping
-}
-
-func (*SymbolMappingMsg) RSize(cstrLength uint16) uint16 {
-	if cstrLength == MetadataV1_SymbolCstrLen {
-		// V1 message doesn't have StypeIn and StypeOut fields
-		return SymbolMappingMsg_MinSize + (2 * cstrLength)
-	} else {
-		return SymbolMappingMsg_MinSize + (2 * cstrLength) + 2
-	}
-}
-
-func (r *SymbolMappingMsg) Fill_Raw(b []byte, cstrLength uint16) error {
-	rsize := r.RSize(cstrLength)
-	if len(b) < int(rsize) {
-		return unexpectedBytesError(len(b), int(rsize))
-	}
-	err := r.Header.Fill_Raw(b[0:RHeader_Size])
-	if err != nil {
-		return err
-	}
-	body := b[RHeader_Size:] // slice of just the body
-	pos := uint16(0)
-	if cstrLength == MetadataV1_SymbolCstrLen {
-		r.StypeIn = SType_RawSymbol // DBN1 doesn't have this field
-	} else {
-		r.StypeIn = SType(body[pos])
-		pos += 1
-	}
-	r.StypeInSymbol = TrimNullBytes(body[pos : pos+cstrLength])
-	pos += cstrLength
-	if cstrLength == MetadataV1_SymbolCstrLen {
-		r.StypeIn = SType_RawSymbol // DBN1 doesn't have this field
-	} else {
-		r.StypeIn = SType(body[pos])
-		pos += 1
-	}
-	r.StypeOutSymbol = TrimNullBytes(body[pos : pos+cstrLength])
-	pos += +cstrLength
-	r.StartTs = binary.LittleEndian.Uint64(body[pos : pos+8])
-	r.EndTs = binary.LittleEndian.Uint64(body[pos+8 : pos+16])
-	return nil
-}
-
-func (r *SymbolMappingMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
-	r.Header = *header
-	r.StypeIn = SType(val.GetUint("stype_in"))
-	r.StypeInSymbol = string(val.GetStringBytes("stype_in_symbol"))
-	r.StypeOut = SType(val.GetUint("stype_out"))
-	r.StypeOutSymbol = string(val.GetStringBytes("stype_out_symbol"))
-	r.StartTs = val.GetUint64("start_ts")
-	r.EndTs = val.GetUint64("end_ts")
-	return nil
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-type ErrorMsg struct {
-	Header RHeader                `json:"hd" csv:"hd"`           // The common header.
-	Error  [ErrorMsg_ErrSize]byte `json:"err" csv:"err"`         // The error message.
-	Code   ErrorCode              `json:"code" csv:"code"`       // The error code.
-	IsLast uint8                  `json:"is_last" csv:"is_last"` // Sometimes multiple errors are sent together. This field will be non-zero for the last error.
-}
-
-const ErrorMsg_ErrSize = 302
-const ErrorMsg_Size = RHeader_Size + ErrorMsg_ErrSize + 2
-
-func (*ErrorMsg) RType() RType {
-	return RType_Error
-}
-
-func (*ErrorMsg) RSize() uint16 {
-	return ErrorMsg_Size
-}
-
-func (r *ErrorMsg) Fill_Raw(b []byte) error {
-	if len(b) < ErrorMsg_Size {
-		return unexpectedBytesError(len(b), ErrorMsg_Size)
-	}
-	err := r.Header.Fill_Raw(b[0:RHeader_Size])
-	if err != nil {
-		return err
-	}
-	body := b[RHeader_Size:] // slice of just the body
-	copy(r.Error[:], body[:ErrorMsg_ErrSize])
-	r.Code = ErrorCode(body[ErrorMsg_ErrSize])
-	r.IsLast = body[ErrorMsg_ErrSize+1]
-	return nil
-}
-
-func (r *ErrorMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
-	r.Header = *header
-	copy(r.Error[:], val.GetStringBytes("err"))
-	r.Code = ErrorCode(uint8(val.GetUint("code")))
-	r.IsLast = uint8(val.GetUint("is_last"))
-	return nil
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
 type SystemMsg struct {
 	Header  RHeader                 `json:"hd" csv:"hd"`     // The common header.
 	Message [SystemMsg_MsgSize]byte `json:"msg" csv:"msg"`   // The message from the Databento Live Subscription Gateway (LSG).
@@ -842,72 +752,6 @@ func (r *SystemMsg) IsHeartbeat() bool {
 		return true
 	}
 	return false
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-// StatMsg is a statistics message. A catchall for various data disseminated by publishers.
-// The [`stat_type`](Self::stat_type) indicates the statistic contained in the message.
-type StatMsg struct {
-	Header       RHeader  `json:"hd" csv:"hd"`                       // The common header.
-	TsRecv       uint64   `json:"ts_recv" csv:"ts_recv"`             // The capture-server-received timestamp expressed as the number of nanoseconds since the UNIX epoch.
-	TsRef        uint64   `json:"ts_ref" csv:"ts_ref"`               // The reference timestamp of the statistic value expressed as the number of nanoseconds since the UNIX epoch. Will be [`crate::UNDEF_TIMESTAMP`] when unused.
-	Price        int64    `json:"price" csv:"price"`                 // The value for price statistics expressed as a signed integer where every 1 unit corresponds to 1e-9, i.e. 1/1,000,000,000 or 0.000000001. Will be [`crate::UNDEF_PRICE`] when unused.
-	Quantity     int32    `json:"quantity" csv:"quantity"`           // The value for non-price statistics. Will be [`crate::UNDEF_STAT_QUANTITY`] when unused.
-	Sequence     uint32   `json:"sequence" csv:"sequence"`           // The message sequence number assigned at the venue.
-	TsInDelta    int32    `json:"ts_in_delta" csv:"ts_in_delta"`     // The delta of `ts_recv - ts_exchange_send`, max 2 seconds.
-	StatType     uint16   `json:"stat_type" csv:"stat_type"`         // The type of statistic value contained in the message. Refer to the [`StatType`](crate::enums::StatType) for variants.
-	ChannelID    uint16   `json:"channel_id" csv:"channel_id"`       // The channel ID assigned by Databento as an incrementing integer starting at zero.
-	UpdateAction uint8    `json:"update_action" csv:"update_action"` // Indicates if the statistic is newly added (1) or deleted (2). (Deleted is only used with some stat types)
-	StatFlags    uint8    `json:"stat_flags" csv:"stat_flags"`       // Additional flags associate with certain stat types.
-	Reserved     [6]uint8 // Filler for alignment
-}
-
-const StatMsg_Size = RHeader_Size + 48
-
-func (*StatMsg) RType() RType {
-	return RType_Statistics
-}
-
-func (*StatMsg) RSize() uint16 {
-	return StatMsg_Size
-}
-
-func (r *StatMsg) Fill_Raw(b []byte) error {
-	if len(b) < StatMsg_Size {
-		return unexpectedBytesError(len(b), StatMsg_Size)
-	}
-	err := r.Header.Fill_Raw(b[0:RHeader_Size])
-	if err != nil {
-		return err
-	}
-	body := b[RHeader_Size:] // slice of just the body
-	r.TsRecv = binary.LittleEndian.Uint64(body[0:8])
-	r.TsRef = binary.LittleEndian.Uint64(body[8:16])
-	r.Price = int64(binary.LittleEndian.Uint64(body[16:24]))
-	r.Quantity = int32(binary.LittleEndian.Uint32(body[24:28]))
-	r.Sequence = binary.LittleEndian.Uint32(body[28:32])
-	r.TsInDelta = int32(binary.LittleEndian.Uint32(body[32:36]))
-	r.StatType = binary.LittleEndian.Uint16(body[36:38])
-	r.ChannelID = binary.LittleEndian.Uint16(body[38:40])
-	r.UpdateAction = body[40]
-	r.StatFlags = body[41]
-	return nil
-}
-
-func (r *StatMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
-	r.Header = *header
-	r.TsRecv = fastjson_GetUint64FromString(val, "ts_recv")
-	r.TsRef = fastjson_GetUint64FromString(val, "ts_ref")
-	r.Price = fastjson_GetInt64FromString(val, "price")
-	r.Quantity = int32(val.GetUint("quantity"))
-	r.Sequence = uint32(val.GetUint("sequence"))
-	r.TsInDelta = int32(val.GetUint("ts_in_delta"))
-	r.StatType = uint16(val.GetUint("stat_type"))
-	r.ChannelID = uint16(val.GetUint("channel_id"))
-	r.UpdateAction = uint8(val.GetUint("update_action"))
-	r.StatFlags = uint8(val.GetUint("stat_flags"))
-	return nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1040,409 +884,63 @@ func (r *BboMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Type Aliases for Backward Compatibility
 
-// InstrumentDefMsg is an instrument definition message conforming to Databento's latest format.
-// This is not a strict byte-layout because RawSymbol has dynamic length that depends on metadata's SymbolCstrLen.
-type InstrumentDefMsg struct {
-	Header                   RHeader                             `json:"hd" csv:"hd"`                                                   // The common header.
-	TsRecv                   uint64                              `json:"ts_recv" csv:"ts_recv"`                                         // The capture-server-received timestamp expressed as the number of nanoseconds since the UNIX epoch.
-	MinPriceIncrement        int64                               `json:"min_price_increment" csv:"min_price_increment"`                 // Fixed price The minimum constant tick for the instrument in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	DisplayFactor            int64                               `json:"display_factor" csv:"display_factor"`                           // The multiplier to convert the venue’s display price to the conventional price, in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	Expiration               uint64                              `json:"expiration" csv:"expiration"`                                   // The last eligible trade time expressed as a number of nanoseconds since the UNIX epoch. Will be [`crate::UNDEF_TIMESTAMP`] when null, such as for equities.
-	Activation               uint64                              `json:"activation" csv:"activation"`                                   // The time of instrument activation expressed as a number of nanoseconds since the UNIX epoch. Will be [`crate::UNDEF_TIMESTAMP`] when null, such as for equities.
-	HighLimitPrice           int64                               `json:"high_limit_price" csv:"high_limit_price"`                       // The allowable high limit price for the trading day in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	LowLimitPrice            int64                               `json:"low_limit_price" csv:"low_limit_price"`                         // The allowable low limit price for the trading day in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	MaxPriceVariation        int64                               `json:"max_price_variation" csv:"max_price_variation"`                 // The differential value for price banding in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	TradingReferencePrice    int64                               `json:"trading_reference_price" csv:"trading_reference_price"`         // The trading reference price for the instrument in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	UnitOfMeasureQty         int64                               `json:"unit_of_measure_qty" csv:"unit_of_measure_qty"`                 // The contract size for each instrument, in combination with `unit_of_measure`, in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	MinPriceIncrementAmount  int64                               `json:"min_price_increment_amount" csv:"min_price_increment_amount"`   // The value currently under development by the venue. Converted to units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	PriceRatio               int64                               `json:"price_ratio" csv:"price_ratio"`                                 // The value used for price calculation in spread and leg pricing in units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	StrikePrice              int64                               `json:"strike_price" csv:"strike_price"`                               // The strike price of the option. Converted to units of 1e-9, i.e. 1/1,000,000,000 or 0.000000001.
-	InstAttribValue          int32                               `json:"inst_attrib_value" csv:"inst_attrib_value"`                     // A bitmap of instrument eligibility attributes.
-	UnderlyingID             uint32                              `json:"underlying_id" csv:"underlying_id"`                             // The `instrument_id` of the first underlying instrument.
-	RawInstrumentID          uint64                              `json:"raw_instrument_id" csv:"raw_instrument_id"`                     // The instrument ID assigned by the publisher. May be the same as `instrument_id`.
-	LegPrice                 int64                               `json:"leg_price" csv:"leg_price"`                                     // The tied price (if any) of the leg.
-	LegDelta                 int64                               `json:"leg_delta" csv:"leg_delta"`                                     // The associated delta (if any) of the leg.
-	MarketDepthImplied       int32                               `json:"market_depth_implied" csv:"market_depth_implied"`               // The implied book depth on the price level data feed.
-	MarketDepth              int32                               `json:"market_depth" csv:"market_depth"`                               // The (outright) book depth on the price level data feed.
-	MarketSegmentID          uint32                              `json:"market_segment_id" csv:"market_segment_id"`                     // The market segment of the instrument.
-	MaxTradeVol              uint32                              `json:"max_trade_vol" csv:"max_trade_vol"`                             // The maximum trading volume for the instrument.
-	MinLotSize               int32                               `json:"min_lot_size" csv:"min_lot_size"`                               // The minimum order entry quantity for the instrument.
-	MinLotSizeBlock          int32                               `json:"min_lot_size_block" csv:"min_lot_size_block"`                   // The minimum quantity required for a block trade of the instrument.
-	MinLotSizeRoundLot       int32                               `json:"min_lot_size_round_lot" csv:"min_lot_size_round_lot"`           // The minimum quantity required for a round lot of the instrument. Multiples of this quantity are also round lots.
-	MinTradeVol              uint32                              `json:"min_trade_vol" csv:"min_trade_vol"`                             // The minimum trading volume for the instrument.
-	ContractMultiplier       int32                               `json:"contract_multiplier" csv:"contract_multiplier"`                 // The number of deliverables per instrument, i.e. peak days.
-	DecayQuantity            int32                               `json:"decay_quantity" csv:"decay_quantity"`                           // The quantity that a contract will decay daily, after `decay_start_date` has been reached.
-	OriginalContractSize     int32                               `json:"original_contract_size" csv:"original_contract_size"`           // The fixed contract value assigned to each instrument.
-	LegInstrumentID          uint32                              `json:"leg_instrument_id" csv:"leg_instrument_id"`                     // The numeric ID assigned to the leg instrument.
-	LegRatioPriceNumerator   int32                               `json:"leg_ratio_price_numerator" csv:"leg_ratio_price_numerator"`     // The numerator of the price ratio of the leg within the spread.
-	LegRatioPriceDenominator int32                               `json:"leg_ratio_price_denominator" csv:"leg_ratio_price_denominator"` // The denominator of the price ratio of the leg within the spread.
-	LegRatioQtyNumerator     int32                               `json:"leg_ratio_qty_numerator" csv:"leg_ratio_qty_numerator"`         // The numerator of the quantity ratio of the leg within the spread.
-	LegRatioQtyDenominator   int32                               `json:"leg_ratio_qty_denominator" csv:"leg_ratio_qty_denominator"`     // The denominator of the quantity ratio of the leg within the spread.
-	LegUnderlyingID          uint32                              `json:"leg_underlying_id" csv:"leg_underlying_id"`                     // The numeric ID of the leg instrument's underlying instrument.
-	ApplID                   int16                               `json:"appl_id" csv:"appl_id"`                                         // The channel ID assigned at the venue.
-	MaturityYear             uint16                              `json:"maturity_year" csv:"maturity_year"`                             // The calendar year reflected in the instrument symbol.
-	DecayStartDate           uint16                              `json:"decay_start_date" csv:"decay_start_date"`                       // The date at which a contract will begin to decay.
-	ChannelID                uint16                              `json:"channel_id" csv:"channel_id"`                                   // The channel ID assigned by Databento as an incrementing integer starting at zero.
-	LegCount                 uint16                              `json:"leg_count" csv:"leg_count"`                                     // The number of legs in the strategy or spread. Will be 0 for outrights.
-	LegIndex                 uint16                              `json:"leg_index" csv:"leg_index"`                                     // The 0-based index of the leg.
-	TradingReferenceDate     uint16                              `json:"trading_reference_date" csv:"trading_reference_date"`           // The trading reference date for the instrument.
-	Currency                 [4]byte                             `json:"currency" csv:"currency"`                                       // The currency used for price fields.
-	SettlCurrency            [4]byte                             `json:"settl_currency" csv:"settl_currency"`                           // The currency used for settlement, if different from `currency`.
-	Secsubtype               [6]byte                             `json:"secsubtype" csv:"secsubtype"`                                   // The strategy type of the spread.
-	RawSymbol                [MetadataV2_SymbolCstrLen]byte      `json:"raw_symbol" csv:"raw_symbol"`                                   // The instrument raw symbol assigned by the publisher.
-	Group                    [21]byte                            `json:"group" csv:"group"`                                             // The security group code of the instrument.
-	Exchange                 [5]byte                             `json:"exchange" csv:"exchange"`                                       // The exchange used to identify the instrument.
-	Asset                    [InstrumentDefMsg_AssetCstrLen]byte `json:"asset" csv:"asset"`                                             // The underlying asset code (product code) of the instrument.
-	Cfi                      [7]byte                             `json:"cfi" csv:"cfi"`                                                 // The ISO standard instrument categorization code.
-	SecurityType             [7]byte                             `json:"security_type" csv:"security_type"`                             // The type of the instrument, e.g. FUT for future or future spread.
-	UnitOfMeasure            [31]byte                            `json:"unit_of_measure" csv:"unit_of_measure"`                         // The unit of measure for the instrument’s original contract size, e.g. USD or LBS.
-	Underlying               [21]byte                            `json:"underlying" csv:"underlying"`                                   // The symbol of the first underlying instrument.
-	StrikePriceCurrency      [4]byte                             `json:"strike_price_currency" csv:"strike_price_currency"`             // The currency of [`strike_price`](Self::strike_price).
-	LegRawSymbol             [MetadataV2_SymbolCstrLen]byte      `json:"leg_raw_symbol" csv:"leg_raw_symbol"`                           // The leg instrument's raw symbol assigned by the publisher.
-	InstrumentClass          byte                                `json:"instrument_class" csv:"instrument_class"`                       // The classification of the instrument.
-	MatchAlgorithm           byte                                `json:"match_algorithm" csv:"match_algorithm"`                         // The matching algorithm used for the instrument, typically **F**IFO.
-	MdSecurityTradingStatus  uint8                               `json:"md_security_trading_status" csv:"md_security_trading_status"`   // The market data security trading status.
-	MainFraction             uint8                               `json:"main_fraction" csv:"main_fraction"`                             // The price denominator of the main fraction.
-	PriceDisplayFormat       uint8                               `json:"price_display_format" csv:"price_display_format"`               // The number of digits to the right of the tick mark, to display fractional prices.
-	SettlPrice_type          uint8                               `json:"settl_price_type" csv:"settl_price_type"`                       // The settlement price type.
-	SubFraction              uint8                               `json:"sub_fraction" csv:"sub_fraction"`                               // The price denominator of the sub fraction.
-	UnderlyingProduct        uint8                               `json:"underlying_product" csv:"underlying_product"`                   // The product complex of the instrument.
-	SecurityUpdateAction     byte                                `json:"security_update_action" csv:"security_update_action"`           // Indicates if the instrument definition has been added, modified, or deleted.
-	MaturityMonth            uint8                               `json:"maturity_month" csv:"maturity_month"`                           // The calendar month reflected in the instrument symbol.
-	MaturityDay              uint8                               `json:"maturity_day" csv:"maturity_day"`                               // The calendar day reflected in the instrument symbol, or 0.
-	MaturityWeek             uint8                               `json:"maturity_week" csv:"maturity_week"`                             // The calendar week reflected in the instrument symbol, or 0.
-	UserDefinedInstrument    byte                                `json:"user_defined_instrument" csv:"user_defined_instrument"`         // Indicates if the instrument is user defined: Yes or No.
-	ContractMultiplierUnit   int8                                `json:"contract_multiplier_unit" csv:"contract_multiplier_unit"`       // The type of `contract_multiplier`. Either `1` for hours, or `2` for days.
-	FlowScheduleType         int8                                `json:"flow_schedule_type" csv:"flow_schedule_type"`                   // The schedule for delivering electricity.
-	TickRule                 uint8                               `json:"tick_rule" csv:"tick_rule"`                                     // The tick rule of the spread.
-	LegInstrumentClass       byte                                `json:"leg_instrument_class" csv:"leg_instrument_class"`               // The classification of the leg instrument.
-	LegSide                  byte                                `json:"leg_side" csv:"leg_side"`                                       // The side taken for the leg when purchasing the spread.
-	Reserved                 [17]byte                            `json:"_reserved,omitempty" csv:"_reserved"`                           // Reserved for future usage.
-}
+// ErrorMsg is a DBN error message.
+// ErrorMsg is an alias for the current version (V2)
+type ErrorMsg = ErrorMsgV2
 
-const InstrumentDefMsg_AssetCstrLen = 7
+const ErrorMsg_Size = ErrorMsgV2_Size
 
-const InstrumentDefMsg_MinSize = RHeader_Size + 370
-const InstrumentDefMsg_Size = 360
+// SymbolMappingMsg is a Databento Symbol Mapping message.
+// This is not a strict byte-layout because StypeInSymbol and StypeOutSymbol have dynamic lengths
+// that depend on metadata's SymbolCstrLen.
+//
+// SymbolMappingMsg is an alias for the current version (V2)
+type SymbolMappingMsg = SymbolMappingMsgV2
 
-func (*InstrumentDefMsg) RType() RType {
-	return RType_InstrumentDef
-}
+// StatMsg is a statistics message. A catchall for various data disseminated by publishers.
+// The [`stat_type`](Self::stat_type) indicates the statistic contained in the message.
+//
+// StatMsg is an alias for the current version (V3).
+// The scanner upgrades V1/V2 records to V3 layout (low-velocity, no perf concern).
+type StatMsg = StatMsgV3
 
-func (*InstrumentDefMsg) RSize() uint16 {
-	return InstrumentDefMsg_Size
-}
+const StatMsg_Size = StatMsgV3_Size
 
-func (r *InstrumentDefMsg) Fill_Raw(b []byte) error {
-	return r.Fill_RawWithLen(b, MetadataV2_SymbolCstrLen)
-}
+// InstrumentDefMsg is a definition of an instrument.
+//
+// InstrumentDefMsg is an alias for the current version (V3).
+// The scanner upgrades V2 records to V3 layout (very low-velocity, no perf concern).
+// NOTE: InstrumentDefMsgV1 (22-byte symbols) was never implemented; only V2+ is supported.
+type InstrumentDefMsg = InstrumentDefMsgV3
 
-func (r *InstrumentDefMsg) Fill_RawWithLen(b []byte, symbolLen uint16) error {
-	// V1 (symbolLen=22) has different layout - no leg_raw_symbol field
-	if symbolLen == MetadataV1_SymbolCstrLen {
-		return r.fillRawV1(b, symbolLen)
+const InstrumentDefMsg_Size = InstrumentDefMsgV3_Size
+
+// /////////////////////////////////////////////////////////////////////////////
+// SymbolMappingMsgFillRaw fills a SymbolMappingMsg from raw bytes based on DBN version.
+// It dispatches to the appropriate version-specific implementation.
+func SymbolMappingMsgFillRaw(r *SymbolMappingMsgV2, b []byte, cstrLength uint16) error {
+	if cstrLength == MetadataV1_SymbolCstrLen {
+		// Decode as V1, then convert
+		var v1 SymbolMappingMsgV1
+		if err := v1.Fill_Raw(b); err != nil {
+			return err
+		}
+		// Copy fields from V1 to V2
+		r.Header = v1.Header
+		r.StypeIn = v1.StypeIn
+		r.StypeInSymbol = v1.StypeInSymbol
+		r.StypeOut = v1.StypeOut
+		r.StypeOutSymbol = v1.StypeOutSymbol
+		r.StartTs = v1.StartTs
+		r.EndTs = v1.EndTs
+		return nil
+	} else if cstrLength == MetadataV2_SymbolCstrLen {
+		// Decode as V2
+		return r.Fill_Raw(b)
+	} else {
+		return unexpectedCStrLenError(cstrLength)
 	}
-	// V2/V3 layout (symbolLen=71)
-	return r.fillRawV2(b, symbolLen)
-}
 
-// fillRawV1 parses DBN V1 InstrumentDefMsg (no leg_raw_symbol)
-func (r *InstrumentDefMsg) fillRawV1(b []byte, symbolLen uint16) error {
-	// V1 minimum size check (smaller than V2/V3 due to no leg_raw_symbol)
-	minSize := 360 // approximate V1 size
-	if len(b) < minSize {
-		return unexpectedBytesError(len(b), minSize)
-	}
-	err := r.Header.Fill_Raw(b[0:RHeader_Size])
-	if err != nil {
-		return err
-	}
-	body := b[RHeader_Size:]
-	r.TsRecv = binary.LittleEndian.Uint64(body[0:8])
-	r.MinPriceIncrement = int64(binary.LittleEndian.Uint64(body[8:16]))
-	r.DisplayFactor = int64(binary.LittleEndian.Uint64(body[16:24]))
-	r.Expiration = binary.LittleEndian.Uint64(body[24:32])
-	r.Activation = binary.LittleEndian.Uint64(body[32:40])
-	r.HighLimitPrice = int64(binary.LittleEndian.Uint64(body[40:48]))
-	r.LowLimitPrice = int64(binary.LittleEndian.Uint64(body[48:56]))
-	r.MaxPriceVariation = int64(binary.LittleEndian.Uint64(body[56:64]))
-	r.TradingReferencePrice = int64(binary.LittleEndian.Uint64(body[64:72]))
-	r.UnitOfMeasureQty = int64(binary.LittleEndian.Uint64(body[72:80]))
-	r.MinPriceIncrementAmount = int64(binary.LittleEndian.Uint64(body[80:88]))
-	r.PriceRatio = int64(binary.LittleEndian.Uint64(body[88:96]))
-	// V1: inst_attrib_value is at offset 96, raw_instrument_id is u32
-	r.InstAttribValue = int32(binary.LittleEndian.Uint32(body[96:100]))
-	r.UnderlyingID = binary.LittleEndian.Uint32(body[100:104])
-	r.RawInstrumentID = uint64(binary.LittleEndian.Uint32(body[104:108])) // u32 in V1
-	r.MarketDepthImplied = int32(binary.LittleEndian.Uint32(body[108:112]))
-	r.MarketDepth = int32(binary.LittleEndian.Uint32(body[112:116]))
-	r.MarketSegmentID = binary.LittleEndian.Uint32(body[116:120])
-	r.MaxTradeVol = binary.LittleEndian.Uint32(body[120:124])
-	r.MinLotSize = int32(binary.LittleEndian.Uint32(body[124:128]))
-	r.MinLotSizeBlock = int32(binary.LittleEndian.Uint32(body[128:132]))
-	r.MinLotSizeRoundLot = int32(binary.LittleEndian.Uint32(body[132:136]))
-	r.MinTradeVol = binary.LittleEndian.Uint32(body[136:140])
-	// _reserved2: 4 bytes at 140:144
-	r.ContractMultiplier = int32(binary.LittleEndian.Uint32(body[144:148]))
-	r.DecayQuantity = int32(binary.LittleEndian.Uint32(body[148:152]))
-	r.OriginalContractSize = int32(binary.LittleEndian.Uint32(body[152:156]))
-	// _reserved3: 4 bytes at 156:160
-	r.TradingReferenceDate = binary.LittleEndian.Uint16(body[160:162])
-	r.ApplID = int16(binary.LittleEndian.Uint16(body[162:164]))
-	r.MaturityYear = binary.LittleEndian.Uint16(body[164:166])
-	r.DecayStartDate = binary.LittleEndian.Uint16(body[166:168])
-	r.ChannelID = binary.LittleEndian.Uint16(body[168:170])
-	copy(r.Currency[:], body[170:174])
-	copy(r.SettlCurrency[:], body[174:178])
-	copy(r.Secsubtype[:], body[178:184])
-	symbolEnd := 184 + int(symbolLen)
-	copy(r.RawSymbol[:], body[184:symbolEnd])
-	copy(r.Group[:], body[symbolEnd:symbolEnd+21])
-	copy(r.Exchange[:], body[symbolEnd+21:symbolEnd+26])
-	copy(r.Asset[:], body[symbolEnd+26:symbolEnd+33])
-	copy(r.Cfi[:], body[symbolEnd+33:symbolEnd+40])
-	copy(r.SecurityType[:], body[symbolEnd+40:symbolEnd+47])
-	copy(r.UnitOfMeasure[:], body[symbolEnd+47:symbolEnd+78])
-	copy(r.Underlying[:], body[symbolEnd+78:symbolEnd+99])
-	copy(r.StrikePriceCurrency[:], body[symbolEnd+99:symbolEnd+103])
-	// V1: instrument_class comes right after strike_price_currency (no leg_raw_symbol)
-	pos := symbolEnd + 103
-	r.InstrumentClass = body[pos]
-	// _reserved4: 2 bytes
-	pos += 3
-	r.StrikePrice = int64(binary.LittleEndian.Uint64(body[pos : pos+8]))
-	pos += 8
-	// _reserved5: 6 bytes
-	pos += 6
-	r.MatchAlgorithm = body[pos]
-	r.MdSecurityTradingStatus = body[pos+1]
-	r.MainFraction = body[pos+2]
-	r.PriceDisplayFormat = body[pos+3]
-	r.SettlPrice_type = body[pos+4]
-	r.SubFraction = body[pos+5]
-	r.UnderlyingProduct = body[pos+6]
-	r.SecurityUpdateAction = body[pos+7]
-	r.MaturityMonth = body[pos+8]
-	r.MaturityDay = body[pos+9]
-	r.MaturityWeek = body[pos+10]
-	r.UserDefinedInstrument = body[pos+11]
-	r.ContractMultiplierUnit = int8(body[pos+12])
-	r.FlowScheduleType = int8(body[pos+13])
-	r.TickRule = body[pos+14]
-	// V1 has no leg fields at the end
-	return nil
-}
-
-// fillRawV2 parses DBN V2 InstrumentDefMsg (also no leg_raw_symbol - only V3 has it)
-func (r *InstrumentDefMsg) fillRawV2(b []byte, symbolLen uint16) error {
-	if len(b) < InstrumentDefMsg_Size {
-		return unexpectedBytesError(len(b), InstrumentDefMsg_Size)
-	}
-	err := r.Header.Fill_Raw(b[0:RHeader_Size])
-	if err != nil {
-		return err
-	}
-	body := b[RHeader_Size:]
-	r.TsRecv = binary.LittleEndian.Uint64(body[0:8])
-	r.MinPriceIncrement = int64(binary.LittleEndian.Uint64(body[8:16]))
-	r.DisplayFactor = int64(binary.LittleEndian.Uint64(body[16:24]))
-	r.Expiration = binary.LittleEndian.Uint64(body[24:32])
-	r.Activation = binary.LittleEndian.Uint64(body[32:40])
-	r.HighLimitPrice = int64(binary.LittleEndian.Uint64(body[40:48]))
-	r.LowLimitPrice = int64(binary.LittleEndian.Uint64(body[48:56]))
-	r.MaxPriceVariation = int64(binary.LittleEndian.Uint64(body[56:64]))
-	r.TradingReferencePrice = int64(binary.LittleEndian.Uint64(body[64:72]))
-	r.UnitOfMeasureQty = int64(binary.LittleEndian.Uint64(body[72:80]))
-	r.MinPriceIncrementAmount = int64(binary.LittleEndian.Uint64(body[80:88]))
-	r.PriceRatio = int64(binary.LittleEndian.Uint64(body[88:96]))
-	r.StrikePrice = int64(binary.LittleEndian.Uint64(body[96:104]))
-	r.InstAttribValue = int32(binary.LittleEndian.Uint32(body[104:108]))
-	r.UnderlyingID = binary.LittleEndian.Uint32(body[108:112])
-	r.RawInstrumentID = uint64(binary.LittleEndian.Uint32(body[112:116])) // still u32 in V2
-	r.MarketDepthImplied = int32(binary.LittleEndian.Uint32(body[116:120]))
-	r.MarketDepth = int32(binary.LittleEndian.Uint32(body[120:124]))
-	r.MarketSegmentID = binary.LittleEndian.Uint32(body[124:128])
-	r.MaxTradeVol = binary.LittleEndian.Uint32(body[128:132])
-	r.MinLotSize = int32(binary.LittleEndian.Uint32(body[132:136]))
-	r.MinLotSizeBlock = int32(binary.LittleEndian.Uint32(body[136:140]))
-	r.MinLotSizeRoundLot = int32(binary.LittleEndian.Uint32(body[140:144]))
-	r.MinTradeVol = binary.LittleEndian.Uint32(body[144:148])
-	r.ContractMultiplier = int32(binary.LittleEndian.Uint32(body[148:152]))
-	r.DecayQuantity = int32(binary.LittleEndian.Uint32(body[152:156]))
-	r.OriginalContractSize = int32(binary.LittleEndian.Uint32(body[156:160]))
-	r.TradingReferenceDate = binary.LittleEndian.Uint16(body[160:162])
-	r.ApplID = int16(binary.LittleEndian.Uint16(body[162:164]))
-	r.MaturityYear = binary.LittleEndian.Uint16(body[164:166])
-	r.DecayStartDate = binary.LittleEndian.Uint16(body[166:168])
-	r.ChannelID = binary.LittleEndian.Uint16(body[168:170])
-	copy(r.Currency[:], body[170:174])
-	copy(r.SettlCurrency[:], body[174:178])
-	copy(r.Secsubtype[:], body[178:184])
-	symbolEnd := 184 + int(symbolLen)
-	copy(r.RawSymbol[:], body[184:symbolEnd])
-	copy(r.Group[:], body[symbolEnd:symbolEnd+21])
-	copy(r.Exchange[:], body[symbolEnd+21:symbolEnd+26])
-	copy(r.Asset[:], body[symbolEnd+26:symbolEnd+33])
-	copy(r.Cfi[:], body[symbolEnd+33:symbolEnd+40])
-	copy(r.SecurityType[:], body[symbolEnd+40:symbolEnd+47])
-	copy(r.UnitOfMeasure[:], body[symbolEnd+47:symbolEnd+78])
-	copy(r.Underlying[:], body[symbolEnd+78:symbolEnd+99])
-	copy(r.StrikePriceCurrency[:], body[symbolEnd+99:symbolEnd+103])
-	// V2: instrument_class comes right after strike_price_currency (no leg_raw_symbol)
-	pos := symbolEnd + 103
-	r.InstrumentClass = body[pos]
-	r.MatchAlgorithm = body[pos+1]
-	r.MdSecurityTradingStatus = body[pos+2]
-	r.MainFraction = body[pos+3]
-	r.PriceDisplayFormat = body[pos+4]
-	r.SettlPrice_type = body[pos+5]
-	r.SubFraction = body[pos+6]
-	r.UnderlyingProduct = body[pos+7]
-	r.SecurityUpdateAction = body[pos+8]
-	r.MaturityMonth = body[pos+9]
-	r.MaturityDay = body[pos+10]
-	r.MaturityWeek = body[pos+11]
-	r.UserDefinedInstrument = body[pos+12]
-	r.ContractMultiplierUnit = int8(body[pos+13])
-	r.FlowScheduleType = int8(body[pos+14])
-	r.TickRule = body[pos+15]
-	// _reserved: 10 bytes at pos+16
-	return nil
-}
-
-func (r *InstrumentDefMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
-	r.Header = *header
-	r.TsRecv = fastjson_GetUint64FromString(val, "ts_recv")
-	r.MinPriceIncrement = fastjson_GetInt64FromString(val, "min_price_increment")
-	r.DisplayFactor = fastjson_GetInt64FromString(val, "display_factor")
-	r.Expiration = fastjson_GetUint64FromString(val, "expiration")
-	r.Activation = fastjson_GetUint64FromString(val, "activation")
-	r.HighLimitPrice = fastjson_GetInt64FromString(val, "high_limit_price")
-	r.LowLimitPrice = fastjson_GetInt64FromString(val, "low_limit_price")
-	r.MaxPriceVariation = fastjson_GetInt64FromString(val, "max_price_variation")
-	r.TradingReferencePrice = fastjson_GetInt64FromString(val, "trading_reference_price")
-	r.UnitOfMeasureQty = fastjson_GetInt64FromString(val, "unit_of_measure_qty")
-	r.MinPriceIncrementAmount = fastjson_GetInt64FromString(val, "min_price_increment_amount")
-	r.PriceRatio = fastjson_GetInt64FromString(val, "price_ratio")
-	r.StrikePrice = fastjson_GetInt64FromString(val, "strike_price")
-	r.InstAttribValue = int32(val.GetUint("inst_attrib_value"))
-	r.UnderlyingID = uint32(val.GetUint("underlying_id"))
-	r.RawInstrumentID = fastjson_GetUint64FromString(val, "raw_instrument_id")
-	r.LegPrice = fastjson_GetInt64FromString(val, "leg_price")
-	r.LegDelta = fastjson_GetInt64FromString(val, "leg_delta")
-	r.MarketDepthImplied = int32(val.GetUint("market_depth_implied"))
-	r.MarketDepth = int32(val.GetUint("market_depth"))
-	r.MarketSegmentID = uint32(val.GetUint("market_segment_id"))
-	r.MaxTradeVol = uint32(val.GetUint("max_trade_vol"))
-	r.MinLotSize = int32(val.GetUint("min_lot_size"))
-	r.MinLotSizeBlock = int32(val.GetUint("min_lot_size_block"))
-	r.MinLotSizeRoundLot = int32(val.GetUint("min_lot_size_round_lot"))
-	r.MinTradeVol = uint32(val.GetUint("min_trade_vol"))
-	r.ContractMultiplier = int32(val.GetUint("contract_multiplier"))
-	r.DecayQuantity = int32(val.GetUint("decay_quantity"))
-	r.OriginalContractSize = int32(val.GetUint("original_contract_size"))
-	r.LegInstrumentID = uint32(val.GetUint("leg_instrument_id"))
-	r.LegRatioPriceNumerator = int32(val.GetUint("leg_ratio_price_numerator"))
-	r.LegRatioPriceDenominator = int32(val.GetUint("leg_ratio_price_denominator"))
-	r.LegRatioQtyNumerator = int32(val.GetUint("leg_ratio_qty_numerator"))
-	r.LegRatioQtyDenominator = int32(val.GetUint("leg_ratio_qty_denominator"))
-	r.LegUnderlyingID = uint32(val.GetUint("leg_underlying_id"))
-	r.ApplID = int16(val.GetUint("appl_id"))
-	r.MaturityYear = uint16(val.GetUint("maturity_year"))
-	r.DecayStartDate = uint16(val.GetUint("decay_start_date"))
-	r.ChannelID = uint16(val.GetUint("channel_id"))
-	r.LegCount = uint16(val.GetUint("leg_count"))
-	r.LegIndex = uint16(val.GetUint("leg_index"))
-	r.TradingReferenceDate = uint16(val.GetUint("trading_reference_date"))
-	copy(r.Currency[:], val.GetStringBytes("currency"))
-	copy(r.SettlCurrency[:], val.GetStringBytes("settl_currency"))
-	copy(r.Secsubtype[:], val.GetStringBytes("secsubtype"))
-	copy(r.RawSymbol[:], val.GetStringBytes("raw_symbol"))
-	copy(r.Group[:], val.GetStringBytes("group"))
-	copy(r.Exchange[:], val.GetStringBytes("exchange"))
-	copy(r.Asset[:], val.GetStringBytes("asset"))
-	copy(r.Cfi[:], val.GetStringBytes("cfi"))
-	copy(r.SecurityType[:], val.GetStringBytes("security_type"))
-	copy(r.UnitOfMeasure[:], val.GetStringBytes("unit_of_measure"))
-	copy(r.Underlying[:], val.GetStringBytes("underlying"))
-	copy(r.StrikePriceCurrency[:], val.GetStringBytes("strike_price_currency"))
-	copy(r.LegRawSymbol[:], val.GetStringBytes("leg_raw_symbol"))
-	r.InstrumentClass = byte(val.GetUint("instrument_class"))
-	r.MatchAlgorithm = byte(val.GetUint("match_algorithm"))
-	r.MdSecurityTradingStatus = uint8(val.GetUint("md_security_trading_status"))
-	r.MainFraction = uint8(val.GetUint("main_fraction"))
-	r.PriceDisplayFormat = uint8(val.GetUint("price_display_format"))
-	r.SettlPrice_type = uint8(val.GetUint("settl_price_type"))
-	r.SubFraction = uint8(val.GetUint("sub_fraction"))
-	r.UnderlyingProduct = uint8(val.GetUint("underlying_product"))
-	r.SecurityUpdateAction = byte(val.GetUint("security_update_action"))
-	r.MaturityMonth = uint8(val.GetUint("maturity_month"))
-	r.MaturityDay = uint8(val.GetUint("maturity_day"))
-	r.MaturityWeek = uint8(val.GetUint("maturity_week"))
-	r.UserDefinedInstrument = byte(val.GetUint("user_defined_instrument"))
-	r.ContractMultiplierUnit = int8(val.GetUint("contract_multiplier_unit"))
-	r.FlowScheduleType = int8(val.GetUint("flow_schedule_type"))
-	r.TickRule = uint8(val.GetUint("tick_rule"))
-	r.LegInstrumentClass = byte(val.GetUint("leg_instrument_class"))
-	r.LegSide = byte(val.GetUint("leg_side"))
-	return nil
-}
-
-type TradeMsg struct {
-	Header    RHeader `json:"hd" csv:"hd"`
-	Price     int64   `json:"price" csv:"price"`
-	Size      uint32  `json:"size" csv:"size"`
-	Action    byte    `json:"action" csv:"action"`
-	Side      byte    `json:"side" csv:"side"`
-	Flags     uint8   `json:"flags" csv:"flags"`
-	Depth     uint8   `json:"depth" csv:"depth"`
-	TsRecv    uint64  `json:"ts_recv" csv:"ts_recv"`
-	TsInDelta int32   `json:"ts_in_delta" csv:"ts_in_delta"`
-	Sequence  uint32  `json:"sequence" csv:"sequence"`
-}
-
-const TradeMsg_Size = RHeader_Size + 32
-
-func (*TradeMsg) RType() RType {
-	return RType_Mbp0
-}
-
-func (*TradeMsg) RSize() uint16 {
-	return TradeMsg_Size
-}
-
-func (r *TradeMsg) Fill_Raw(b []byte) error {
-	if len(b) < MboMsg_Size {
-		return unexpectedBytesError(len(b), MboMsg_Size)
-	}
-	err := r.Header.Fill_Raw(b[0:RHeader_Size])
-	if err != nil {
-		return err
-	}
-	body := b[RHeader_Size:]
-	r.Price = int64(binary.LittleEndian.Uint64(body[0:8]))
-	r.Size = binary.LittleEndian.Uint32(body[8:12])
-	r.Action = body[12]
-	r.Side = body[13]
-	r.Flags = body[14]
-	r.Depth = body[15]
-	r.TsRecv = binary.LittleEndian.Uint64(body[16:24])
-	r.TsInDelta = int32(binary.LittleEndian.Uint32(body[24:28]))
-	r.Sequence = binary.LittleEndian.Uint32(body[28:32])
-	return nil
-}
-
-func (r *TradeMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
-	r.Header = *header
-	r.Price = fastjson_GetInt64FromString(val, "price")
-	r.Size = uint32(val.GetUint("size"))
-	r.Action = byte(val.GetUint("action"))
-	r.Side = byte(val.GetUint("side"))
-	r.Flags = uint8(val.GetUint("flags"))
-	r.Depth = uint8(val.GetUint("depth"))
-	r.TsRecv = fastjson_GetUint64FromString(val, "ts_recv")
-	r.TsInDelta = int32(val.GetInt("ts_in_delta"))
-	r.Sequence = uint32(val.GetUint("sequence"))
-	return nil
 }

@@ -14,11 +14,12 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/huh/v2"
 	"github.com/WT-In/dbn-go"
 	dbn_hist "github.com/WT-In/dbn-go/hist"
 	dbn_file "github.com/WT-In/dbn-go/internal/file"
 	dbn_tui "github.com/WT-In/dbn-go/internal/tui"
-	"github.com/charmbracelet/huh"
+	"github.com/WT-In/dbn-go/internal/version"
 	"github.com/dustin/go-humanize"
 	"github.com/relvacode/iso8601"
 	"github.com/segmentio/encoding/json"
@@ -333,9 +334,10 @@ func main() {
 ///////////////////////////////////////////////////////////////////////////////
 
 var rootCmd = &cobra.Command{
-	Use:   "dbn-go-hist",
-	Short: "dbn-go-hist queries the Databento Historical API.",
-	Long:  "dbn-go-hist queries the Databento Historical API.",
+	Use:     "dbn-go-hist",
+	Short:   "dbn-go-hist queries the Databento Historical API.",
+	Long:    "dbn-go-hist queries the Databento Historical API.",
+	Version: version.Get(),
 }
 
 var listDatasetsCmd = &cobra.Command{
@@ -619,11 +621,11 @@ var getRangeCmd = &cobra.Command{
 
 		requireBudgetApproval(apiKey, symbols, &jobParams)
 
-		reader, err := dbn_hist.GetRangeStream(apiKey, jobParams)
+		dbnData, err := dbn_hist.GetRange(apiKey, jobParams)
 		requireNoErrorMsg(err, "error getting range")
-		defer reader.Close()
 
-		_, err = io.Copy(writer, reader)
+		// Write the output
+		_, err = writer.Write(dbnData)
 		requireNoErrorMsg(err, "error writing output")
 	},
 }

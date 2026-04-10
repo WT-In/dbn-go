@@ -31,6 +31,8 @@ builds:
     env: [CGO_ENABLED=0]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/NimbleMarkets/dbn-go/internal/version.Version=v{{.Version}}
 
   - id: "dbn-go-hist"
     main: ./cmd/dbn-go-hist
@@ -38,6 +40,8 @@ builds:
     env: [CGO_ENABLED=0]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/NimbleMarkets/dbn-go/internal/version.Version=v{{.Version}}
 
   - id: "dbn-go-live"
     main: ./cmd/dbn-go-live
@@ -45,6 +49,8 @@ builds:
     env: [CGO_ENABLED=0]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/NimbleMarkets/dbn-go/internal/version.Version=v{{.Version}}
 
   - id: "dbn-go-mcp-meta"
     main: ./cmd/dbn-go-mcp-meta
@@ -52,6 +58,8 @@ builds:
     env: [CGO_ENABLED=0]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/NimbleMarkets/dbn-go/internal/version.Version=v{{.Version}}
 
   - id: "dbn-go-slurp-docs"
     main: ./cmd/dbn-go-slurp-docs
@@ -59,6 +67,8 @@ builds:
     env: [CGO_ENABLED=0]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/NimbleMarkets/dbn-go/internal/version.Version=v{{.Version}}
 
   - id: "dbn-go-tui"
     main: ./cmd/dbn-go-tui
@@ -66,6 +76,8 @@ builds:
     env: [CGO_ENABLED=0]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/NimbleMarkets/dbn-go/internal/version.Version=v{{.Version}}
 
   # --- CGO binary: dbn-go-mcp-data (requires DuckDB) ---
   # Per-platform builds with explicit cross-compilers from goreleaser-cross.
@@ -75,6 +87,8 @@ builds:
     binary: bin/dbn-go-mcp-data
     goos: [linux]
     goarch: [amd64]
+    ldflags:
+      - -s -w -X github.com/NimbleMarkets/dbn-go/internal/version.Version=v{{.Version}}
     env:
       - CGO_ENABLED=1
       - CC=x86_64-linux-gnu-gcc
@@ -85,6 +99,8 @@ builds:
     binary: bin/dbn-go-mcp-data
     goos: [linux]
     goarch: [arm64]
+    ldflags:
+      - -s -w -X github.com/NimbleMarkets/dbn-go/internal/version.Version=v{{.Version}}
     env:
       - CGO_ENABLED=1
       - CC=aarch64-linux-gnu-gcc
@@ -95,6 +111,8 @@ builds:
     binary: bin/dbn-go-mcp-data
     goos: [darwin]
     goarch: [amd64]
+    ldflags:
+      - -s -w -X github.com/NimbleMarkets/dbn-go/internal/version.Version=v{{.Version}}
     env:
       - MACOSX_DEPLOYMENT_TARGET=11.0
       - CGO_ENABLED=1
@@ -106,6 +124,8 @@ builds:
     binary: bin/dbn-go-mcp-data
     goos: [darwin]
     goarch: [arm64]
+    ldflags:
+      - -s -w -X github.com/NimbleMarkets/dbn-go/internal/version.Version=v{{.Version}}
     env:
       - MACOSX_DEPLOYMENT_TARGET=11.0
       - CGO_ENABLED=1

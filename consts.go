@@ -98,6 +98,8 @@ func (i InstrumentClass) IsSpread() bool {
 type MatchAlgorithm uint8
 
 const (
+	// No matching algorithm was specified.
+	MatchAlgorithm_Undefined MatchAlgorithm = ' '
 	// First-in-first-out matching.
 	MatchAlgorithm_Fifo MatchAlgorithm = 'F'
 	// A configurable match algorithm.
@@ -694,6 +696,8 @@ const (
 	RFlag_BAD_TS_RECV uint8 = 1 << 3
 	/// Indicates an unrecoverable gap was detected in the channel.
 	RFlag_MAYBE_BAD_BOOK uint8 = 1 << 2
+	/// Publisher specific
+	RFlag_PUBLISHER_SPECIFIC uint8 = 1 << 1
 )
 
 // / The type of [`InstrumentDefMsg`](crate::record::InstrumentDefMsg) update.
@@ -711,50 +715,50 @@ const (
 )
 
 // / The type of statistic contained in a [`StatMsg`](crate::record::StatMsg).
-type StatType uint8
+type StatType uint16
 
 const (
-	/// The price of the first trade of an instrument. `price` will be set.
-	/// `quantity` will be set when provided by the venue.
+	// The price of the first trade of an instrument. `price` will be set.
+	// `quantity` will be set when provided by the venue.
 	StatType_OpeningPrice StatType = 1
-	/// The probable price of the first trade of an instrument published during pre-
-	/// open. Both `price` and `quantity` will be set.
+	// The probable price of the first trade of an instrument published during pre-
+	// open. Both `price` and `quantity` will be set.
 	StatType_IndicativeOpeningPrice StatType = 2
-	/// The settlement price of an instrument. `price` will be set and `flags` indicate
-	/// whether the price is final or preliminary and actual or theoretical. `ts_ref`
-	/// will indicate the trading date of the settlement price.
+	// The settlement price of an instrument. `price` will be set and `flags` indicate
+	// whether the price is final or preliminary and actual or theoretical. `ts_ref`
+	// will indicate the trading date of the settlement price.
 	StatType_SettlementPrice StatType = 3
-	/// The lowest trade price of an instrument during the trading session. `price` will
-	/// be set.
+	// The lowest trade price of an instrument during the trading session. `price` will
+	// be set.
 	StatType_TradingSessionLowPrice StatType = 4
-	/// The highest trade price of an instrument during the trading session. `price` will
-	/// be set.
+	// The highest trade price of an instrument during the trading session. `price` will
+	// be set.
 	StatType_TradingSessionHighPrice StatType = 5
-	/// The number of contracts cleared for an instrument on the previous trading date.
-	/// `quantity` will be set. `ts_ref` will indicate the trading date of the volume.
+	// The number of contracts cleared for an instrument on the previous trading date.
+	// `quantity` will be set. `ts_ref` will indicate the trading date of the volume.
 	StatType_ClearedVolume StatType = 6
-	/// The lowest offer price for an instrument during the trading session. `price`
-	/// will be set.
+	// The lowest offer price for an instrument during the trading session. `price`
+	// will be set.
 	StatType_LowestOffer StatType = 7
-	/// The highest bid price for an instrument during the trading session. `price`
-	/// will be set.
+	// The highest bid price for an instrument during the trading session. `price`
+	// will be set.
 	StatType_HighestBid StatType = 8
-	/// The current number of outstanding contracts of an instrument. `quantity` will
-	/// be set. `ts_ref` will indicate the trading date for which the open interest was
-	/// calculated.
+	// The current number of outstanding contracts of an instrument. `quantity` will
+	// be set. `ts_ref` will indicate the trading date for which the open interest was
+	// calculated.
 	StatType_OpenInterest StatType = 9
-	/// The volume-weighted average price (VWAP) for a fixing period. `price` will be
-	/// set.
+	// The volume-weighted average price (VWAP) for a fixing period. `price` will be
+	// set.
 	StatType_FixingPrice StatType = 10
-	/// The last trade price during a trading session. `price` will be set.
-	/// `quantity` will be set when provided by the venue.
+	// The last trade price during a trading session. `price` will be set.
+	// `quantity` will be set when provided by the venue.
 	StatType_ClosePrice StatType = 11
-	/// The change in price from the close price of the previous trading session to the
-	/// most recent trading session. `price` will be set.
+	// The change in price from the close price of the previous trading session to the
+	// most recent trading session. `price` will be set.
 	StatType_NetChange StatType = 12
-	/// The volume-weighted average price (VWAP) during the trading session.
-	/// `price` will be set to the VWAP while `quantity` will be the traded
-	/// volume.
+	// The volume-weighted average price (VWAP) during the trading session.
+	// `price` will be set to the VWAP while `quantity` will be the traded
+	// volume.
 	StatType_Vwap StatType = 13
 	// The implied volatility associated with the settlement price. `price` will
 	// be set with the standard precision.
@@ -765,6 +769,16 @@ const (
 	// The auction uncrossing price. This is used for auctions that are neither the official opening auction nor the official closing auction. `price` will be
 	// `quantity` will be set when provided by the venue.
 	StatType_UncrossingPrice StatType = 16
+	/// The exchange defined upper price limit. `price` will be set with the standard precision.
+	StatType_UpperPriceLimit StatType = 17
+	/// The exchange defined lower price limit. `price` will be set with the standard precision.
+	StatType_LowerPriceLimit StatType = 18
+	/// The number of Block contracts cleared for an instrument on the previous trading date.
+	/// `quantity` will be set. `ts_ref` will indicate the trading date of the volume.
+	StatType_BlockVolume StatType = 19
+	// A venue specific volume statistic. Refer to the venue documentation for more information.
+	// `quantity` will be set.
+	StatType_VenueSpecificVolume1 StatType = 10001
 )
 
 // / The type of [`StatMsg`](crate::record::StatMsg) update.
@@ -1018,24 +1032,100 @@ func (s *SystemCode) UnmarshalJSON(data []byte) error {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// SlowReaderBehavior is the behavior when clients lag behind, either "skip" or "warn".
+// See: https://databento.com/docs/api-reference-live/basics/slow-reader-behavior
+type SlowReaderBehavior string
+
+const (
+	/// SystemMsg with system code SlowReaderWarning will be sent to the client.  The session will not skip any records and will attempt to replay every single record in the subscription.
+	SlowReaderBehavior_Warn SlowReaderBehavior = "warn"
+	/// An ErrorMsg with error code SkippedRecordsAfterSlowReading will be sent to the client and the session will skip records until caught up with real-time data.  Default.
+	SlowReaderBehavior_Skip SlowReaderBehavior = "skip"
+)
+
+// Returns the string representation of the SlowReaderBehavior ('skip' or 'warn'), or empty string if unknown.
+func (s SlowReaderBehavior) String() string {
+	switch s {
+	case SlowReaderBehavior_Skip:
+		return "skip"
+	case SlowReaderBehavior_Warn:
+		return "warn"
+	default:
+		return ""
+	}
+}
+
+// SlowReaderBehaviorFromString converts a string to a SlowReaderBehavior.
+// Returns an error if the string is unknown.
+func SlowReaderBehaviorFromString(str string) (SlowReaderBehavior, error) {
+	str = strings.ToLower(str)
+	switch str {
+	case "":
+		// In JSON marshalling, null is turned into the empty string
+		// We accept that as the default of "warn" and don't consider it an error.
+		return SlowReaderBehavior_Warn, nil
+	case "skip":
+		return SlowReaderBehavior_Skip, nil
+	case "warn":
+		return SlowReaderBehavior_Warn, nil
+	default:
+		return SlowReaderBehavior_Warn, fmt.Errorf("unknown SlowReaderBehavior: '%s'", str)
+	}
+}
+
+func (s SlowReaderBehavior) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.String())
+}
+
+func (s *SlowReaderBehavior) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+	js, err := SlowReaderBehaviorFromString(str)
+	if err != nil {
+		return err
+	}
+	*s = js
+	return nil
+}
+
+// Type implements pflag.Value.Type.  Returns "dbn.SlowReaderBehavior".
+func (*SlowReaderBehavior) Type() string {
+	return "dbn.SlowReaderBehavior"
+}
+
+// Set implements the flag.Value interface.
+func (s *SlowReaderBehavior) Set(value string) error {
+	srb, err := SlowReaderBehaviorFromString(value)
+	if err == nil {
+		*s = srb
+	}
+	return err
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 // An error code from the live subscription gateway.
 type ErrorCode uint8
 
 const (
 	/// The authentication step failed.
-	ErrorCode_AuthFailed = 1
+	ErrorCode_AuthFailed ErrorCode = 1
 	/// The user account or API key were deactivated.
-	ErrorCode_ApiKeyDeactivated = 2
+	ErrorCode_ApiKeyDeactivated ErrorCode = 2
 	/// The user has exceeded their open connection limit.
-	ErrorCode_ConnectionLimitExceeded = 3
+	ErrorCode_ConnectionLimitExceeded ErrorCode = 3
 	/// One or more symbols failed to resolve.
-	ErrorCode_SymbolResolutionFailed = 4
+	ErrorCode_SymbolResolutionFailed ErrorCode = 4
 	/// There was an issue with a subscription request (other than symbol resolution).
-	ErrorCode_InvalidSubscription = 5
+	ErrorCode_InvalidSubscription ErrorCode = 5
 	/// An error occurred in the gateway.
-	ErrorCode_InternalError = 6
+	ErrorCode_InternalError ErrorCode = 6
+	/// A slow client was detected and records were skipped by the gateway to allow catching up.
+	ErrorCode_SkippedRecordsAfterSlowReading ErrorCode = 7
 	/// No error code was specified or this record was upgraded from a version 1 struct where the code field didn't exist.
-	ErrorCode_Unset = 255
+	ErrorCode_Unset ErrorCode = 255
 )
 
 // Returns the string representation of the ErrorCode, or empty string if unknown.
@@ -1053,6 +1143,8 @@ func (e ErrorCode) String() string {
 		return "INVALID_SUBSCRIPTION"
 	case ErrorCode_InternalError:
 		return "INTERNAL_ERROR"
+	case ErrorCode_SkippedRecordsAfterSlowReading:
+		return "SKIPPED_RECORDS_AFTER_SLOW_READING"
 	case ErrorCode_Unset:
 		return "UNSET"
 	default:
@@ -1077,6 +1169,8 @@ func ErrorCodeFromString(str string) (ErrorCode, error) {
 		return ErrorCode_InvalidSubscription, nil
 	case "INTERNAL_ERROR":
 		return ErrorCode_InternalError, nil
+	case "SKIPPED_RECORDS_AFTER_SLOW_READING":
+		return ErrorCode_SkippedRecordsAfterSlowReading, nil
 	case "UNSET":
 		return ErrorCode_Unset, nil
 	default:
