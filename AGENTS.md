@@ -151,7 +151,7 @@ Query tools: `get_cost` (metadata only), `get_range` (incurs billing, returns JS
   - v1→v2: symbol strings expanded from 22 to 71 bytes
   - v2→v3: `StatMsg.Quantity` widened from int32 to int64; `InstrumentDefMsg` gains multi-leg fields, `RawInstrumentID` widened from uint32 to uint64, 4 fields removed
   - The scanner always upgrades records to v3 layout; `StatMsg` and `InstrumentDefMsg` are aliases for their V3 types
-  - V1 `InstrumentDefMsg` (22-byte symbols) is not supported
+  - V1 `InstrumentDefMsg` (22-byte symbols) is decoded and upgraded to V3 like V2
 - **Structure**: Metadata header → Records
 - **Record Header**: 16 bytes (`RHeader_Size`)
   - Length (1 byte), RType (1 byte), PublisherID (2 bytes), InstrumentID (4 bytes), TsEvent (8 bytes)
@@ -163,7 +163,7 @@ Query tools: `get_cost` (metadata only), `get_range` (incurs billing, returns JS
 `Mbp0Msg`, `Mbp1Msg`, `Mbp10Msg`, `MboMsg`, `OhlcvMsg`, `Cmbp1Msg`, `BboMsg`, `ImbalanceMsg`, `StatusMsg`, `InstrumentDefMsg`, `StatMsg`, `ErrorMsg`, `SystemMsg`, `SymbolMappingMsg`
 
 ### Versioned Types
-`StatMsg` and `InstrumentDefMsg` are aliases for `StatMsgV3` and `InstrumentDefMsgV3`. Versioned structs (`StatMsgV2`, `InstrumentDefMsgV2`, `SymbolMappingMsgV1`, `SymbolMappingMsgV2`) exist for direct decoding of older formats.
+`StatMsg` and `InstrumentDefMsg` are aliases for `StatMsgV3` and `InstrumentDefMsgV3`. Versioned structs (`StatMsgV2`, `InstrumentDefMsgV1`, `InstrumentDefMsgV2`, `SymbolMappingMsgV1`, `SymbolMappingMsgV2`) exist for direct decoding of older formats.
 
 ### Version-Aware Decoding
 `DbnScanner.Visit()` automatically upgrades V1/V2 records to V3 before passing to the Visitor. For typed decoding, use `scanner.DecodeStatMsg()` and `scanner.DecodeInstrumentDefMsg()` instead of the generic `DbnScannerDecode` (which does not upgrade). The `JsonScanner` uses tolerant parsing to handle both V2 (bare number) and V3 (quoted string) JSON formats.

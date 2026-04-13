@@ -7,8 +7,6 @@
 
 package dbn
 
-import "fmt"
-
 /////////////////////////////////////////////////////////////////////////////
 // Version-aware decoders for records that differ across DBN versions.
 // These convert V1/V2 records up to the V3 layout (the canonical type).
@@ -71,14 +69,86 @@ func DecodeStatMsg(metadata *Metadata, body []byte) (*StatMsgV3, error) {
 	}
 }
 
-// decodeInstrumentDefMsg decodes an InstrumentDefMsg, upgrading from V2 if needed.
-// V1 instrument definitions (22-byte symbols) are not supported.
-// V2 has a different field layout (uint32 RawInstrumentID, extra fields removed in V3).
+// upgradeInstrumentDefMsgV1ToV3 maps a decoded V1 definition to the canonical V3 layout.
+// Fields that exist only in V1 (trading_reference_*, md_security_trading_status, settl_price_type) are dropped,
+// matching databento/dbn V1→V3 conversion. V3-only leg fields remain zero-valued.
+func upgradeInstrumentDefMsgV1ToV3(v1 *InstrumentDefMsgV1) *InstrumentDefMsgV3 {
+	v3 := InstrumentDefMsgV3{
+		Header:                  v1.Header,
+		TsRecv:                  v1.TsRecv,
+		MinPriceIncrement:       v1.MinPriceIncrement,
+		DisplayFactor:           v1.DisplayFactor,
+		Expiration:              v1.Expiration,
+		Activation:              v1.Activation,
+		HighLimitPrice:          v1.HighLimitPrice,
+		LowLimitPrice:           v1.LowLimitPrice,
+		MaxPriceVariation:       v1.MaxPriceVariation,
+		UnitOfMeasureQty:        v1.UnitOfMeasureQty,
+		MinPriceIncrementAmount: v1.MinPriceIncrementAmount,
+		PriceRatio:              v1.PriceRatio,
+		StrikePrice:             v1.StrikePrice,
+		RawInstrumentID:         uint64(v1.RawInstrumentID),
+		InstAttribValue:         v1.InstAttribValue,
+		UnderlyingID:            v1.UnderlyingID,
+		MarketDepthImplied:      v1.MarketDepthImplied,
+		MarketDepth:             v1.MarketDepth,
+		MarketSegmentID:         v1.MarketSegmentID,
+		MaxTradeVol:             v1.MaxTradeVol,
+		MinLotSize:              v1.MinLotSize,
+		MinLotSizeBlock:         v1.MinLotSizeBlock,
+		MinLotSizeRoundLot:      v1.MinLotSizeRoundLot,
+		MinTradeVol:             v1.MinTradeVol,
+		ContractMultiplier:      v1.ContractMultiplier,
+		DecayQuantity:           v1.DecayQuantity,
+		OriginalContractSize:    v1.OriginalContractSize,
+		ApplID:                  v1.ApplID,
+		MaturityYear:            v1.MaturityYear,
+		DecayStartDate:          v1.DecayStartDate,
+		ChannelID:               v1.ChannelID,
+		Currency:                v1.Currency,
+		SettlCurrency:           v1.SettlCurrency,
+		Secsubtype:              v1.Secsubtype,
+		Group:                   v1.Group,
+		Exchange:                v1.Exchange,
+		Cfi:                     v1.Cfi,
+		SecurityType:            v1.SecurityType,
+		UnitOfMeasure:           v1.UnitOfMeasure,
+		Underlying:              v1.Underlying,
+		StrikePriceCurrency:     v1.StrikePriceCurrency,
+		InstrumentClass:         v1.InstrumentClass,
+		MatchAlgorithm:          v1.MatchAlgorithm,
+		MainFraction:            v1.MainFraction,
+		PriceDisplayFormat:      v1.PriceDisplayFormat,
+		SubFraction:             v1.SubFraction,
+		UnderlyingProduct:       v1.UnderlyingProduct,
+		SecurityUpdateAction:    v1.SecurityUpdateAction,
+		MaturityMonth:           v1.MaturityMonth,
+		MaturityDay:             v1.MaturityDay,
+		MaturityWeek:            v1.MaturityWeek,
+		UserDefinedInstrument:   v1.UserDefinedInstrument,
+		ContractMultiplierUnit:  v1.ContractMultiplierUnit,
+		FlowScheduleType:        v1.FlowScheduleType,
+		TickRule:                v1.TickRule,
+	}
+	copy(v3.RawSymbol[:], v1.RawSymbol[:])
+	copy(v3.Asset[:], v1.Asset[:])
+	return &v3
+}
+
+// decodeInstrumentDefMsg decodes an InstrumentDefMsg, upgrading from V1/V2 if needed.
+// V1 uses 22-byte symbols and a different field order; V2 uses uint32 RawInstrumentID and fields removed in V3.
 // V3 has uint64 RawInstrumentID and multi-leg strategy fields.
 func DecodeInstrumentDefMsg(metadata *Metadata, body []byte, size int) (*InstrumentDefMsgV3, error) {
 	switch metadata.VersionNum {
 	case HeaderVersion1:
-		return nil, fmt.Errorf("InstrumentDefMsg V1 (22-byte symbols) is not supported")
+		if size < InstrumentDefMsgV1_Size {
+			return nil, unexpectedBytesError(size, InstrumentDefMsgV1_Size)
+		}
+		var v1 InstrumentDefMsgV1
+		if err := v1.Fill_Raw(body[:size]); err != nil {
+			return nil, err
+		}
+		return upgradeInstrumentDefMsgV1ToV3(&v1), nil
 	case HeaderVersion2:
 		var v2 InstrumentDefMsgV2
 		if err := v2.Fill_Raw(body[:size]); err != nil {

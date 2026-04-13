@@ -92,6 +92,7 @@ var _ = Describe("DbnScanner", func() {
 			Expect(int((&dbn.StatusMsg{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
 			Expect(int((&dbn.BboMsg{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
 			Expect(int((&dbn.InstrumentDefMsg{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
+			Expect(int((&dbn.InstrumentDefMsgV1{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
 			Expect(int((&dbn.InstrumentDefMsgV2{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
 			Expect(int((&dbn.InstrumentDefMsgV3{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
 		})
@@ -236,16 +237,39 @@ var _ = Describe("DbnScanner", func() {
 			Expect(dbn.TrimNullBytes(r0.RawSymbol[:])).To(Equal("MSFT"))
 		})
 
-		It("should error on V1 definition via Visit", func() {
+		It("should upgrade V1 definition to V3 via Visit", func() {
 			reader, closer, err := dbn.MakeCompressedReader("./tests/data/test_data.definition.v1.dbn.zst", false)
 			Expect(err).To(BeNil())
 			defer closer.Close()
 
 			scanner := dbn.NewDbnScanner(reader)
 			visitor := &capturingVisitor{}
-			err = visitAll(scanner, visitor)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("V1"))
+			Expect(visitAll(scanner, visitor)).To(Succeed())
+
+			metadata, _ := scanner.Metadata()
+			Expect(metadata.VersionNum).To(Equal(uint8(dbn.HeaderVersion1)))
+			Expect(visitor.Defs).To(HaveLen(2))
+
+			r0 := visitor.Defs[0]
+			Expect(r0.Header.InstrumentID).To(Equal(uint32(6819)))
+			Expect(r0.TsRecv).To(Equal(uint64(1633331241618029519)))
+			Expect(r0.RawInstrumentID).To(Equal(uint64(2147483647)))
+			Expect(r0.DisplayFactor).To(Equal(int64(100000000000000)))
+			Expect(r0.InstrumentClass).To(Equal(uint8('K')))
+			Expect(r0.MatchAlgorithm).To(Equal(uint8('F')))
+			Expect(r0.LegPrice).To(Equal(int64(0)))
+			Expect(r0.LegDelta).To(Equal(int64(0)))
+			Expect(r0.LegInstrumentID).To(Equal(uint32(0)))
+			Expect(r0.LegCount).To(Equal(uint16(0)))
+			Expect(r0.LegIndex).To(Equal(uint16(0)))
+			Expect(r0.Asset[7]).To(Equal(byte(0)))
+			Expect(r0.Asset[10]).To(Equal(byte(0)))
+			Expect(dbn.TrimNullBytes(r0.RawSymbol[:])).To(Equal("MSFT"))
+
+			r1 := visitor.Defs[1]
+			Expect(r1.Header.InstrumentID).To(Equal(uint32(6830)))
+			Expect(r1.RawInstrumentID).To(Equal(uint64(2147483647)))
+			Expect(dbn.TrimNullBytes(r1.RawSymbol[:])).To(Equal("MSFT"))
 		})
 	})
 
@@ -275,6 +299,21 @@ var _ = Describe("DbnScanner", func() {
 			r, err := scanner.DecodeStatMsg()
 			Expect(err).To(BeNil())
 			Expect(r.Quantity).To(Equal(int64(math.MaxInt64)))
+		})
+
+		It("should upgrade V1 definition via DecodeInstrumentDefMsg", func() {
+			reader, closer, err := dbn.MakeCompressedReader("./tests/data/test_data.definition.v1.dbn.zst", false)
+			Expect(err).To(BeNil())
+			defer closer.Close()
+
+			scanner := dbn.NewDbnScanner(reader)
+			Expect(scanner.Next()).To(BeTrue())
+
+			r, err := scanner.DecodeInstrumentDefMsg()
+			Expect(err).To(BeNil())
+			Expect(r.RawInstrumentID).To(Equal(uint64(2147483647)))
+			Expect(r.LegPrice).To(Equal(int64(0)))
+			Expect(dbn.TrimNullBytes(r.RawSymbol[:])).To(Equal("MSFT"))
 		})
 
 		It("should upgrade V2 definition via DecodeInstrumentDefMsg", func() {

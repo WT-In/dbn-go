@@ -226,7 +226,7 @@ func (s *DbnScanner) DecodeStatMsg() (*StatMsgV3, error) {
 }
 
 // DecodeInstrumentDefMsg parses the Scanner's current record as an InstrumentDefMsg (V3 layout).
-// V2 records are automatically upgraded to V3. V1 is not supported.
+// V1 and V2 records are automatically upgraded to V3.
 func (s *DbnScanner) DecodeInstrumentDefMsg() (*InstrumentDefMsgV3, error) {
 	if s.lastSize <= RHeader_Size {
 		return nil, ErrNoRecord

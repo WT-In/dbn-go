@@ -911,8 +911,7 @@ const StatMsg_Size = StatMsgV3_Size
 // InstrumentDefMsg is a definition of an instrument.
 //
 // InstrumentDefMsg is an alias for the current version (V3).
-// The scanner upgrades V2 records to V3 layout (very low-velocity, no perf concern).
-// NOTE: InstrumentDefMsgV1 (22-byte symbols) was never implemented; only V2+ is supported.
+// The scanner upgrades V1/V2 records to V3 layout (very low-velocity, no perf concern).
 type InstrumentDefMsg = InstrumentDefMsgV3
 
 const InstrumentDefMsg_Size = InstrumentDefMsgV3_Size
