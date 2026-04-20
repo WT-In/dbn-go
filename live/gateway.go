@@ -168,6 +168,12 @@ type SubscriptionRequestMsg struct {
 
 // Encode converts SubscriptionRequestMsg to its line protocol representation.
 func (m *SubscriptionRequestMsg) Encode() []byte {
+	return m.encodeChunk(m.Symbols, true)
+}
+
+// encodeChunk serializes one subscription-request line for a subset of symbols.
+// isLast sets the is_last=0|1 flag expected by the live gateway for chunked subscriptions.
+func (m *SubscriptionRequestMsg) encodeChunk(symbols []string, isLast bool) []byte {
 	b := fmt.Appendf(nil, "schema=%s|stype_in=%s", m.Schema, m.StypeIn.String())
 
 	if !m.Start.IsZero() {
@@ -179,12 +185,17 @@ func (m *SubscriptionRequestMsg) Encode() []byte {
 
 	b = append(b, "|symbols="...)
 	isFirst := true
-	for _, symbol := range m.Symbols {
+	for _, symbol := range symbols {
 		if !isFirst {
 			b = append(b, ',')
 		}
 		b = append(b, symbol...)
 		isFirst = false
+	}
+	if isLast {
+		b = append(b, "|is_last=1"...)
+	} else {
+		b = append(b, "|is_last=0"...)
 	}
 	b = append(b, '\n')
 	return b

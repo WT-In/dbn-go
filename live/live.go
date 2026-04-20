@@ -9,12 +9,12 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/WT-In/dbn-go"
@@ -42,29 +42,54 @@ const (
 	API_KEY_LENGTH  = 32
 
 	MAX_STR_LENGTH = 24 * 1024
+
+	// SUBSCRIPTION_LINE_MAX is the maximum number of bytes in a single
+	// subscription-request line on the wire. Matches the live gateway line-size
+	// ceiling and the reader buffer size (MAX_STR_LENGTH).
+	SUBSCRIPTION_LINE_MAX = MAX_STR_LENGTH
 )
 
-// deadlineReader wraps net.Conn so each Read sets a fresh read deadline.
-// When ReadTimeout is used, a healthy stream must deliver bytes within timeout
-// on every read (heartbeats fill idle periods per Databento gateway behavior).
+// deadlineReader applies a per-read deadline to every Read. The deadline
+// duration can be swapped atomically; a zero duration disables the deadline
+// for subsequent reads.
+//
+// When ReadTimeout is used in steady state, a healthy stream must deliver bytes
+// within that duration on every read (heartbeats fill idle periods per Databento
+// gateway behavior).
 type deadlineReader struct {
 	conn    net.Conn
-	timeout time.Duration
+	timeout atomic.Int64 // nanoseconds; 0 disables the deadline
 }
 
 func (r *deadlineReader) Read(p []byte) (int, error) {
-	if err := r.conn.SetReadDeadline(time.Now().Add(r.timeout)); err != nil {
-		return 0, err
+	if d := r.timeout.Load(); d > 0 {
+		if err := r.conn.SetReadDeadline(time.Now().Add(time.Duration(d))); err != nil {
+			return 0, err
+		}
+	} else {
+		// Clear any deadline left from a previous positive timeout so reads block
+		// until data is available again.
+		if err := r.conn.SetReadDeadline(time.Time{}); err != nil {
+			return 0, err
+		}
 	}
 	return r.conn.Read(p)
 }
 
-func newBufReader(conn net.Conn, readTimeout time.Duration) *bufio.Reader {
-	var r io.Reader = conn
-	if readTimeout > 0 {
-		r = &deadlineReader{conn: conn, timeout: readTimeout}
+func (r *deadlineReader) setTimeout(d time.Duration) {
+	if d < 0 {
+		d = 0
 	}
-	return bufio.NewReaderSize(r, MAX_STR_LENGTH)
+	r.timeout.Store(int64(d))
+}
+
+func newBufReader(conn net.Conn, cfg LiveConfig) (*bufio.Reader, *deadlineReader) {
+	if cfg.ReadTimeout == 0 && cfg.HandshakeReadTimeout == 0 {
+		return bufio.NewReaderSize(conn, MAX_STR_LENGTH), nil
+	}
+	dr := &deadlineReader{conn: conn}
+	dr.setTimeout(cfg.HandshakeReadTimeout)
+	return bufio.NewReaderSize(dr, MAX_STR_LENGTH), dr
 }
 
 type SystemMsgV1 struct {
@@ -89,14 +114,22 @@ type ErrorMsgV2 struct {
 ///////////////////////////////////////////////////////////////////////////////
 
 type LiveConfig struct {
-	Logger               *slog.Logger
-	ApiKey               string
-	Dataset              string
-	Client               string
-	Encoding             dbn.Encoding // nil mean Encoding_Dbn
-	SendTsOut            bool
-	HeartbeatInterval    time.Duration // Heartbeat interval; 0 means use server default
-	ReadTimeout          time.Duration // If > 0, each read fails after this duration with no data
+	Logger            *slog.Logger
+	ApiKey            string
+	Dataset           string
+	Client            string
+	Encoding          dbn.Encoding // nil mean Encoding_Dbn
+	SendTsOut         bool
+	HeartbeatInterval time.Duration // Heartbeat interval; 0 means use server default
+	// ReadTimeout bounds the maximum idle gap between bytes while streaming records
+	// (after session start and DBN metadata). Heartbeats from the gateway should
+	// arrive within this window. Zero disables per-read deadlines in steady state.
+	ReadTimeout time.Duration
+	// HandshakeReadTimeout bounds idle gaps during the greeting, CRAM challenge,
+	// authentication response, and DBN metadata read. Large symbol lists can delay
+	// metadata; use this instead of tightening ReadTimeout for that phase. Zero
+	// disables per-read deadlines during handshake (default).
+	HandshakeReadTimeout time.Duration
 	SlowReaderBehavior   dbn.SlowReaderBehavior
 	VersionUpgradePolicy dbn.VersionUpgradePolicy
 	Verbose              bool
@@ -147,6 +180,8 @@ type LiveClient struct {
 	conn      net.Conn
 	bufReader *bufio.Reader
 
+	deadlineReader *deadlineReader
+
 	dbnScanner  *dbn.DbnScanner
 	jsonScanner *dbn.JsonScanner
 
@@ -183,7 +218,7 @@ func NewLiveClient(config LiveConfig) (*LiveClient, error) {
 	} else {
 		c.conn = conn
 	}
-	c.bufReader = newBufReader(c.conn, config.ReadTimeout)
+	c.bufReader, c.deadlineReader = newBufReader(c.conn, config)
 	if c.config.Verbose {
 		c.logger.Info("[LiveClient.NewLiveClient] connected", "dataset", config.Dataset, "hostport", hostPort)
 	}
@@ -238,20 +273,59 @@ func (c *LiveClient) Subscribe(sub SubscriptionRequestMsg) error {
 	if len(sub.Symbols) == 0 {
 		return errors.New("subscribe request must contain at least one symbol")
 	}
-	requestBytes := sub.Encode()
-	if n, err := c.conn.Write(requestBytes); err != nil {
-		return fmt.Errorf("failed to send subscribe request: %v", err)
-	} else if n != len(requestBytes) {
-		return fmt.Errorf("failed to send subscribe request: wanted %d sent %d", len(requestBytes), n)
+	fixedLen := len(sub.encodeChunk(nil, true))
+	if fixedLen >= SUBSCRIPTION_LINE_MAX {
+		return fmt.Errorf("subscription request fixed fields exceed max line length (%d bytes)", SUBSCRIPTION_LINE_MAX)
 	}
+	budget := SUBSCRIPTION_LINE_MAX - fixedLen
+
+	var chunk []string
+	used := 0
+	flush := func(isLast bool) error {
+		line := sub.encodeChunk(chunk, isLast)
+		if len(line) > SUBSCRIPTION_LINE_MAX {
+			return fmt.Errorf("internal error: subscription line length %d exceeds max %d", len(line), SUBSCRIPTION_LINE_MAX)
+		}
+		n, err := c.conn.Write(line)
+		if err != nil {
+			return fmt.Errorf("failed to send subscribe request: %w", err)
+		}
+		if n != len(line) {
+			return fmt.Errorf("failed to send subscribe request: wanted %d sent %d", len(line), n)
+		}
+		chunk = chunk[:0]
+		used = 0
+		return nil
+	}
+
+	for _, sym := range sub.Symbols {
+		cost := len(sym)
+		if len(chunk) > 0 {
+			cost++ // comma between symbols
+		}
+		if cost > budget {
+			return fmt.Errorf("symbol %q exceeds max subscription symbol payload (%d bytes)", sym, budget)
+		}
+		if used+cost > budget {
+			if err := flush(false); err != nil {
+				return err
+			}
+			cost = len(sym)
+		}
+		chunk = append(chunk, sym)
+		used += cost
+	}
+
+	if err := flush(true); err != nil {
+		return err
+	}
+
 	if c.config.Verbose {
 		symbols := strings.Join(sub.Symbols, ",")
-		if c.config.Verbose {
-			c.logger.Info("[LiveClient.Subscribe]",
-				"schema", sub.Schema, "start", sub.Start,
-				"stype_in", sub.StypeIn.String(), "symbols", symbols,
-			)
-		}
+		c.logger.Info("[LiveClient.Subscribe]",
+			"schema", sub.Schema, "start", sub.Start,
+			"stype_in", sub.StypeIn.String(), "symbols", symbols,
+		)
 	}
 
 	return nil
@@ -274,7 +348,7 @@ func (c *LiveClient) Start() error {
 	}
 
 	if c.bufReader == nil {
-		c.bufReader = newBufReader(c.conn, c.config.ReadTimeout)
+		c.bufReader, c.deadlineReader = newBufReader(c.conn, c.config)
 	}
 
 	// Create a DbnScanner and ensure we get the metadata
@@ -290,6 +364,10 @@ func (c *LiveClient) Start() error {
 			c.logger.Info("[LiveClient.Start] read metadata successfully",
 				"version_num", metadata.VersionNum, "len_mappings", len(metadata.Mappings))
 		}
+	}
+
+	if c.deadlineReader != nil {
+		c.deadlineReader.setTimeout(c.config.ReadTimeout)
 	}
 
 	return nil

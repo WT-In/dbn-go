@@ -5,10 +5,12 @@ package dbn_live
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -188,6 +190,121 @@ var _ = Describe("DbnLive", func() {
 		})
 	})
 
+	Context("SubscriptionRequestMsg.Encode", func() {
+		It("should end with is_last=1 and a newline", func() {
+			msg := SubscriptionRequestMsg{
+				Schema:  "mbp-1",
+				StypeIn: dbn.SType_RawSymbol,
+				Symbols: []string{"AAPL", "MSFT"},
+			}
+			encoded := string(msg.Encode())
+			Expect(encoded).To(HaveSuffix("|is_last=1\n"))
+			Expect(encoded).To(ContainSubstring("|symbols=AAPL,MSFT|"))
+		})
+	})
+
+	Context("Subscribe chunking", func() {
+		It("should emit multiple lines with is_last=0 until final is_last=1", func() {
+			base := SubscriptionRequestMsg{
+				Schema:  "s",
+				StypeIn: dbn.SType_RawSymbol,
+			}
+			fixed := len(base.encodeChunk(nil, true))
+			budget := SUBSCRIPTION_LINE_MAX - fixed
+			Expect(budget).To(BeNumerically(">", 8))
+
+			n := budget*2 + 5
+			syms := make([]string, n)
+			for i := range syms {
+				syms[i] = "a"
+			}
+			sub := SubscriptionRequestMsg{
+				Schema:  "s",
+				StypeIn: dbn.SType_RawSymbol,
+				Symbols: syms,
+			}
+			conn := &writeCapture{}
+			client := &LiveClient{conn: conn}
+			Expect(client.Subscribe(sub)).To(Succeed())
+
+			var nonEmpty [][]byte
+			for _, ln := range bytes.Split(conn.buf.Bytes(), []byte{'\n'}) {
+				if len(ln) > 0 {
+					nonEmpty = append(nonEmpty, ln)
+				}
+			}
+			Expect(len(nonEmpty)).To(BeNumerically(">=", 3))
+			for i, ln := range nonEmpty {
+				Expect(len(ln)).To(BeNumerically("<=", SUBSCRIPTION_LINE_MAX))
+				s := string(ln)
+				if i < len(nonEmpty)-1 {
+					Expect(s).To(ContainSubstring("is_last=0"))
+				} else {
+					Expect(s).To(ContainSubstring("is_last=1"))
+				}
+			}
+		})
+
+		It("should reject a symbol larger than the line budget", func() {
+			base := SubscriptionRequestMsg{
+				Schema:  "x",
+				StypeIn: dbn.SType_RawSymbol,
+			}
+			budget := SUBSCRIPTION_LINE_MAX - len(base.encodeChunk(nil, true))
+			big := strings.Repeat("Z", budget+1)
+			conn := &writeCapture{}
+			client := &LiveClient{conn: conn}
+			err := client.Subscribe(SubscriptionRequestMsg{
+				Schema:  "x",
+				StypeIn: dbn.SType_RawSymbol,
+				Symbols: []string{big},
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("exceeds max subscription symbol payload"))
+			Expect(conn.buf.Len()).To(Equal(0))
+		})
+	})
+
+	Context("deadlineReader", func() {
+		It("should stop applying read deadlines after setTimeout(0)", func() {
+			clientConn, serverConn := net.Pipe()
+			defer clientConn.Close()
+			defer serverConn.Close()
+
+			dr := &deadlineReader{conn: clientConn}
+			dr.setTimeout(25 * time.Millisecond)
+
+			errCh := make(chan error, 1)
+			go func() {
+				buf := make([]byte, 16)
+				_, err := dr.Read(buf)
+				errCh <- err
+			}()
+
+			var err error
+			select {
+			case err = <-errCh:
+			case <-time.After(time.Second):
+				Fail("timed out waiting for deadline read to return")
+			}
+			Expect(err).To(HaveOccurred())
+			var netErr net.Error
+			Expect(errors.As(err, &netErr)).To(BeTrue())
+			Expect(netErr.Timeout()).To(BeTrue())
+
+			dr.setTimeout(0)
+			go func() {
+				time.Sleep(40 * time.Millisecond)
+				_, _ = serverConn.Write([]byte("ping"))
+			}()
+			buf := make([]byte, 4)
+			n, err := dr.Read(buf)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(n).To(Equal(4))
+			Expect(string(buf)).To(Equal("ping"))
+		})
+	})
+
 	Context("authenticate", func() {
 		It("should send configured client in auth request and store session ID", func() {
 			clientConn, serverConn := net.Pipe()
@@ -351,6 +468,42 @@ var _ = Describe("DbnLive", func() {
 		})
 	})
 })
+
+type writeCapture struct {
+	buf bytes.Buffer
+}
+
+func (w *writeCapture) Read(p []byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (w *writeCapture) Write(p []byte) (int, error) {
+	return w.buf.Write(p)
+}
+
+func (w *writeCapture) Close() error {
+	return nil
+}
+
+func (w *writeCapture) LocalAddr() net.Addr {
+	return dummyAddr("local")
+}
+
+func (w *writeCapture) RemoteAddr() net.Addr {
+	return dummyAddr("remote")
+}
+
+func (w *writeCapture) SetDeadline(time.Time) error {
+	return nil
+}
+
+func (w *writeCapture) SetReadDeadline(time.Time) error {
+	return nil
+}
+
+func (w *writeCapture) SetWriteDeadline(time.Time) error {
+	return nil
+}
 
 type scriptedConn struct {
 	reads   [][]byte
