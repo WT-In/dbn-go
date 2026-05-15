@@ -25,6 +25,7 @@ var _ = Describe("Struct", func() {
 			Expect(unsafe.Sizeof(dbn.ErrorMsgV1{})).To(Equal(uintptr(dbn.ErrorMsgV1_Size)))
 			Expect(unsafe.Sizeof(dbn.ErrorMsgV2{})).To(Equal(uintptr(dbn.ErrorMsgV2_Size)))
 			Expect(unsafe.Sizeof(dbn.SystemMsg{})).To(Equal(uintptr(dbn.SystemMsg_Size)))
+			Expect(unsafe.Sizeof(dbn.SystemMsgV1{})).To(Equal(uintptr(dbn.SystemMsgV1_Size)))
 			Expect(unsafe.Sizeof(dbn.StatMsg{})).To(Equal(uintptr(dbn.StatMsg_Size)))
 			Expect(unsafe.Sizeof(dbn.StatMsgV2{})).To(Equal(uintptr(dbn.StatMsgV2_Size)))
 			Expect(unsafe.Sizeof(dbn.StatMsgV3{})).To(Equal(uintptr(dbn.StatMsgV3_Size)))
@@ -52,6 +53,30 @@ var _ = Describe("Struct", func() {
 			Expect(int((&dbn.InstrumentDefMsg{}).RSize())).To(Equal(dbn.InstrumentDefMsg_Size))
 			Expect(int((&dbn.InstrumentDefMsgV2{}).RSize())).To(Equal(dbn.InstrumentDefMsgV2_Size))
 			Expect(int((&dbn.InstrumentDefMsgV3{}).RSize())).To(Equal(dbn.InstrumentDefMsgV3_Size))
+			Expect(int((&dbn.SystemMsgV1{}).RSize())).To(Equal(dbn.SystemMsgV1_Size))
+		})
+	})
+
+	Context("SystemMsg IsHeartbeat", func() {
+		It("detects heartbeat via Unset + prefix and explicit code", func() {
+			var m dbn.SystemMsg
+			copy(m.Message[:], "Heartbeat")
+			m.Code = dbn.SystemCode_Unset
+			Expect(m.IsHeartbeat()).To(BeTrue())
+
+			copy(m.Message[:], "Subscription request for tbbo data succeeded")
+			m.Code = dbn.SystemCode_Unset
+			Expect(m.IsHeartbeat()).To(BeFalse())
+
+			m.Code = dbn.SystemCode_Heartbeat
+			for i := range m.Message {
+				m.Message[i] = 0
+			}
+			Expect(m.IsHeartbeat()).To(BeTrue())
+
+			copy(m.Message[:], "Heartbeat")
+			m.Code = dbn.SystemCode_SubscriptionAck
+			Expect(m.IsHeartbeat()).To(BeFalse())
 		})
 	})
 })

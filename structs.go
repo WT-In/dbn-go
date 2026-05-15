@@ -737,21 +737,22 @@ func (r *SystemMsg) Fill_Raw(b []byte) error {
 func (r *SystemMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
 	r.Header = *header
 	copy(r.Message[:], val.GetStringBytes("msg"))
-	r.Code = SystemCode(uint8(val.GetUint("code")))
+	if val.Exists("code") {
+		r.Code = SystemCode(uint8(val.GetUint("code")))
+	} else {
+		r.Code = inferSystemCodeFromMessageField(&r.Message)
+	}
 	return nil
 }
 
 // IsHeartbeat checks if the system message is a heartbeat.
-// For fullest compatibility, it falls back to a string check
+// Matches databento-cpp record.hpp: Unset code uses a prefix check on "Heartbeat";
+// otherwise code must equal SystemCode_Heartbeat.
 func (r *SystemMsg) IsHeartbeat() bool {
-	if r.Code == SystemCode_Heartbeat {
-		return true
+	if r.Code == SystemCode_Unset {
+		return bytes.HasPrefix(r.Message[:], []byte(SystemCodeString_Heartbeat))
 	}
-	// Fallback to string check for backwards compatibility
-	if bytes.Equal(r.Message[:], []byte(SystemCodeString_Heartbeat)) {
-		return true
-	}
-	return false
+	return r.Code == SystemCode_Heartbeat
 }
 
 ///////////////////////////////////////////////////////////////////////////////
