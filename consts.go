@@ -967,8 +967,8 @@ const (
 	SystemCode_EndOfInterval = 4
 	/// No system code was specified or this record was upgraded from a version 1 struct where the code field didn't exist.
 	SystemCode_Unset = 255
-	// Heartbeat string
-	SystemCodeString_Heartbeat = "HEARTBEAT"
+	// Heartbeat string (case-sensitive on the wire in V1 msg; see databento-cpp v1.hpp)
+	SystemCodeString_Heartbeat = "Heartbeat"
 )
 
 // Returns the string representation of the SystemCode, or empty string if unknown.
@@ -996,7 +996,7 @@ func (s SystemCode) String() string {
 func SystemCodeFromString(str string) (SystemCode, error) {
 	str = strings.ToUpper(str)
 	switch str {
-	case SystemCodeString_Heartbeat:
+	case "HEARTBEAT":
 		return SystemCode_Heartbeat, nil
 	case "SUBSCRIPTION_ACK":
 		return SystemCode_SubscriptionAck, nil

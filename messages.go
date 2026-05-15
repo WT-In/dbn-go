@@ -7,9 +7,102 @@
 
 package dbn
 
+import "bytes"
+
 /////////////////////////////////////////////////////////////////////////////
 // Version-aware decoders for records that differ across DBN versions.
 // These convert V1/V2 records up to the V3 layout (the canonical type).
+
+// inferSystemCodeFromText maps a NUL-terminated or logical message string to a
+// SystemCode, matching databento-cpp SystemMsg::ToV2 string patterns in v1.cpp.
+func inferSystemCodeFromText(text []byte) SystemCode {
+	if len(text) == 0 {
+		return SystemCode_Unset
+	}
+	if bytes.HasPrefix(text, []byte(SystemCodeString_Heartbeat)) {
+		return SystemCode_Heartbeat
+	}
+	if bytes.HasPrefix(text, []byte("End of interval for ")) {
+		return SystemCode_EndOfInterval
+	}
+	const subAckStart = "Subscription request "
+	const subAckEnd = " succeeded"
+	if bytes.HasPrefix(text, []byte(subAckStart)) && bytes.HasSuffix(text, []byte(subAckEnd)) {
+		return SystemCode_SubscriptionAck
+	}
+	if bytes.HasPrefix(text, []byte("Warning: slow reading")) {
+		return SystemCode_SlowReaderWarning
+	}
+	const finishedStart = "Finished "
+	const finishedEnd = " replay"
+	if bytes.HasPrefix(text, []byte(finishedStart)) && bytes.HasSuffix(text, []byte(finishedEnd)) {
+		return SystemCode_ReplayCompleted
+	}
+	return SystemCode_Unset
+}
+
+// inferSystemCodeV1 applies V1 wire rules: pattern matching runs only when a NUL
+// exists in the 64-byte msg field (databento-cpp v1.cpp).
+func inferSystemCodeV1(msg [SystemMsgV1_MsgSize]byte) SystemCode {
+	n := bytes.IndexByte(msg[:], 0)
+	if n < 0 {
+		return SystemCode_Unset
+	}
+	return inferSystemCodeFromText(msg[:n])
+}
+
+// inferSystemCodeFromMessageField infers code from the 303-byte JSON-backed message
+// field after Fill_Json copy: trim trailing NULs, then apply the same patterns as V1→V2.
+func inferSystemCodeFromMessageField(msg *[SystemMsg_MsgSize]byte) SystemCode {
+	end := len(msg)
+	for end > 0 && (*msg)[end-1] == 0 {
+		end--
+	}
+	text := (*msg)[:end]
+	if i := bytes.IndexByte(text, 0); i >= 0 {
+		text = text[:i]
+	}
+	return inferSystemCodeFromText(text)
+}
+
+func upgradeSystemMsgV1ToV2(v1 *SystemMsgV1) *SystemMsg {
+	out := &SystemMsg{}
+	out.Header = v1.Header
+	out.Header.Length = uint8(SystemMsg_Size / 4)
+	copy(out.Message[:], v1.Msg[:])
+	out.Code = inferSystemCodeV1(v1.Msg)
+	return out
+}
+
+// DecodeSystemMsg decodes a SystemMsg, upgrading DBN v1 wire layout to the
+// canonical V2/V3 struct (303-byte message + code). metadata must be non-nil.
+func DecodeSystemMsg(metadata *Metadata, body []byte) (*SystemMsg, error) {
+	if metadata == nil {
+		return nil, ErrNoMetadata
+	}
+	switch metadata.VersionNum {
+	case HeaderVersion1:
+		if len(body) < SystemMsgV1_Size {
+			return nil, unexpectedBytesError(len(body), SystemMsgV1_Size)
+		}
+		var v1 SystemMsgV1
+		if err := v1.Fill_Raw(body[:SystemMsgV1_Size]); err != nil {
+			return nil, err
+		}
+		return upgradeSystemMsgV1ToV2(&v1), nil
+	case HeaderVersion2, HeaderVersion3:
+		if len(body) < SystemMsg_Size {
+			return nil, unexpectedBytesError(len(body), SystemMsg_Size)
+		}
+		out := new(SystemMsg)
+		if err := out.Fill_Raw(body[:SystemMsg_Size]); err != nil {
+			return nil, err
+		}
+		return out, nil
+	default:
+		return nil, ErrInvalidDBNVersion
+	}
+}
 
 // decodeErrorMsg decodes a ErrorMsg, upgrading from V1 if needed.
 // V1 only has a short error message

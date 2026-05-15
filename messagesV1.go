@@ -11,6 +11,7 @@
 package dbn
 
 import (
+	"bytes"
 	"encoding/binary"
 
 	"github.com/valyala/fastjson"
@@ -52,6 +53,50 @@ func (r *ErrorMsgV1) Fill_Json(val *fastjson.Value, header *RHeader) error {
 	r.Header = *header
 	copy(r.Error[:], val.GetStringBytes("err"))
 	return nil
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+// SystemMsgV1 is a non-error message from the live gateway in DBN version 1.
+// It has only a fixed 64-byte message field; the code was introduced in V2.
+// See databento-cpp/include/databento/v1.hpp.
+type SystemMsgV1 struct {
+	Header RHeader                   `json:"hd" csv:"hd"`
+	Msg    [SystemMsgV1_MsgSize]byte `json:"msg" csv:"msg"`
+}
+
+const SystemMsgV1_MsgSize = 64
+const SystemMsgV1_Size = RHeader_Size + SystemMsgV1_MsgSize
+
+func (*SystemMsgV1) RType() RType {
+	return RType_System
+}
+
+func (*SystemMsgV1) RSize() uint16 {
+	return SystemMsgV1_Size
+}
+
+func (r *SystemMsgV1) Fill_Raw(b []byte) error {
+	if len(b) < SystemMsgV1_Size {
+		return unexpectedBytesError(len(b), SystemMsgV1_Size)
+	}
+	if err := r.Header.Fill_Raw(b[0:RHeader_Size]); err != nil {
+		return err
+	}
+	copy(r.Msg[:], b[RHeader_Size:RHeader_Size+SystemMsgV1_MsgSize])
+	return nil
+}
+
+func (r *SystemMsgV1) Fill_Json(val *fastjson.Value, header *RHeader) error {
+	r.Header = *header
+	copy(r.Msg[:], val.GetStringBytes("msg"))
+	return nil
+}
+
+// IsHeartbeat reports whether the V1 wire message body starts with "Heartbeat"
+// (9 bytes, matching databento-cpp v1.hpp).
+func (r *SystemMsgV1) IsHeartbeat() bool {
+	return bytes.HasPrefix(r.Msg[:], []byte(SystemCodeString_Heartbeat))
 }
 
 ///////////////////////////////////////////////////////////////////////////////

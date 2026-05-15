@@ -131,6 +131,21 @@ type LiveConfig struct {
 	// disables per-read deadlines during handshake (default).
 	HandshakeReadTimeout time.Duration
 	SlowReaderBehavior   dbn.SlowReaderBehavior
+	// VersionUpgradePolicy documents how the client interprets historical DBN
+	// versions. It does not add any field to the live gateway authentication
+	// message (official Python / Rust / C++ clients behave the same: the
+	// gateway chooses the wire DBN version).
+	//
+	// DbnScanner.Visit and the version-aware Decode* helpers (DecodeSystemMsg,
+	// DecodeErrorMsg, DecodeStatMsg, DecodeInstrumentDefMsg, DecodeSymbolMappingMsg)
+	// always expose the canonical “latest” shapes for records that differ across
+	// versions—e.g. V1 SystemMsg (80 bytes on the wire) is upgraded to the
+	// SystemMsg struct with 303-byte msg + code, matching databento-cpp’s
+	// VersionUpgradePolicy::UpgradeToV3 behavior for application code.
+	//
+	// Today dbn-go does not branch on this field inside the decoder; it matches
+	// the default official-client behavior (upgrade-to-latest). The field is
+	// reserved for future opt-in strict AS_IS decoding if needed.
 	VersionUpgradePolicy dbn.VersionUpgradePolicy
 	Verbose              bool
 }

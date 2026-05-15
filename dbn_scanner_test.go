@@ -1,6 +1,8 @@
 package dbn_test
 
 import (
+	"bytes"
+	"encoding/binary"
 	"io"
 	"math"
 	"os"
@@ -32,6 +34,28 @@ func (v *capturingVisitor) OnStatMsg(r *dbn.StatMsg) error {
 func (v *capturingVisitor) OnInstrumentDefMsg(r *dbn.InstrumentDefMsg) error {
 	v.Defs = append(v.Defs, *r)
 	return nil
+}
+
+type capturingSystemVisitor struct {
+	dbn.NullVisitor
+	Systems []dbn.SystemMsg
+}
+
+func (v *capturingSystemVisitor) OnSystemMsg(r *dbn.SystemMsg) error {
+	v.Systems = append(v.Systems, *r)
+	return nil
+}
+
+func buildV1SystemWireRecord(msg string) []byte {
+	b := make([]byte, dbn.SystemMsgV1_Size)
+	b[0] = uint8(dbn.SystemMsgV1_Size / 4)
+	b[1] = byte(dbn.RType_System)
+	binary.LittleEndian.PutUint16(b[2:4], 7)
+	binary.LittleEndian.PutUint32(b[4:8], 12345)
+	binary.LittleEndian.PutUint64(b[8:16], 999)
+	copy(b[16:], msg)
+	b[16+len(msg)] = 0
+	return b
 }
 
 // visitAll runs scanner.Next()+Visit() until EOF, returning the visitor and any non-EOF error.
@@ -95,6 +119,31 @@ var _ = Describe("DbnScanner", func() {
 			Expect(int((&dbn.InstrumentDefMsgV1{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
 			Expect(int((&dbn.InstrumentDefMsgV2{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
 			Expect(int((&dbn.InstrumentDefMsgV3{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
+			Expect(int((&dbn.SystemMsgV1{}).RSize())).Should(BeNumerically("<", dbn.DEFAULT_SCRATCH_BUFFER_SIZE))
+		})
+	})
+
+	Context("version-aware Visit for SystemMsg v1", func() {
+		It("should upgrade v1 SystemMsg via Visit", func() {
+			md := &dbn.Metadata{
+				VersionNum: dbn.HeaderVersion1,
+				Dataset:    "GLBX.MDP3",
+				Schema:     dbn.Schema_Mbp1,
+			}
+			var buf bytes.Buffer
+			Expect(md.Write(&buf)).To(Succeed())
+			buf.Write(buildV1SystemWireRecord("Subscription request for tbbo data succeeded"))
+
+			scanner := dbn.NewDbnScanner(bytes.NewReader(buf.Bytes()))
+			metadata, err := scanner.Metadata()
+			Expect(err).To(BeNil())
+			Expect(metadata.VersionNum).To(Equal(uint8(dbn.HeaderVersion1)))
+
+			v := &capturingSystemVisitor{}
+			Expect(scanner.Next()).To(BeTrue())
+			Expect(scanner.Visit(v)).To(Succeed())
+			Expect(v.Systems).To(HaveLen(1))
+			Expect(v.Systems[0].Code == dbn.SystemCode_SubscriptionAck).To(BeTrue())
 		})
 	})
 

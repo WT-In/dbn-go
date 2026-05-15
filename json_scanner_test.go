@@ -6,6 +6,7 @@ import (
 	"github.com/WT-In/dbn-go"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/valyala/fastjson"
 )
 
 var _ = Describe("JsonScanner", func() {
@@ -51,6 +52,20 @@ var _ = Describe("JsonScanner", func() {
 			Expect(r1.Low).To(Equal(int64(372050000000000)))
 			Expect(r1.Close).To(Equal(int64(372050000000000)))
 			Expect(r1.Volume).To(Equal(uint64(13)))
+		})
+	})
+
+	Context("SystemMsg JSON without code", func() {
+		It("Fill_Json should infer SubscriptionAck from message body", func() {
+			var p fastjson.Parser
+			line := `{"hd":{"ts_event":1,"rtype":23,"publisher_id":0,"instrument_id":0},"msg":"Subscription request for tbbo data succeeded"}`
+			val, err := p.Parse(line)
+			Expect(err).To(BeNil())
+			var hdr dbn.RHeader
+			Expect(hdr.Fill_Json(val.Get("hd"))).To(BeNil())
+			var msg dbn.SystemMsg
+			Expect(msg.Fill_Json(val, &hdr)).To(BeNil())
+			Expect(msg.Code == dbn.SystemCode_SubscriptionAck).To(BeTrue())
 		})
 	})
 })
