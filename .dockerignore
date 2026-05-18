@@ -1,7 +1,0 @@
-# .dockerignore
-
-# exclude local build artifacts
-bin
-
-# exclude task cache
-.task

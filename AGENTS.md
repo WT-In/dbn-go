@@ -1,212 +1,142 @@
-# AGENTS.md - Agent Guidelines for dbn-go
+# AGENTS.md — Agent guidelines for dbn-go
 
-This document provides essential context for AI agents working on the `dbn-go` project.
+Context for AI agents working on **WT-In/dbn-go**, a **library-only** fork of [NimbleMarkets/dbn-go](https://github.com/NimbleMarkets/dbn-go).
 
-## Project Overview
+## Project overview
 
-**dbn-go** is a Go library and CLI toolkit for Databento's DBN (Databento Binary Encoding) format and APIs. It is **not affiliated with Databento** - it's an independent open-source project by Neomantra Corp / Nimble Markets.
+**dbn-go** is a Go library for Databento’s DBN format and Historical / Live HTTP+TCP APIs. It is **not** affiliated with Databento.
 
-Key capabilities:
-- DBN file reading/writing (binary and JSON formats)
-- Historical API client (`hist/`)
-- Live API client (`live/`)
-- 6 CLI tools for file processing, API interaction, TUI, docs scraping, and MCP server
+Capabilities:
 
-## Project Structure
+- DBN binary and JSON record decoding (root `dbn` package)
+- Historical REST client (`hist/`)
+- Live gateway client (`live/`)
+- Internal build metadata for live auth client string (`internal/version/` — used from `live/gateway.go`)
+
+There is **no** `cmd/` tree in this fork; consume the module with `go get github.com/WT-In/dbn-go`.
+
+## Project structure
 
 ```
 .
-├── *.go                    # Core library: structs, consts, scanners, metadata
+├── *.go                    # Core: structs, consts, scanners, metadata
 ├── hist/                   # Historical API client
-├── live/                   # Live API client  
-├── cmd/                    # CLI tools
-│   ├── dbn-go-file/        # DBN file processing (parquet, split, etc.)
-│   ├── dbn-go-hist/        # Historical API CLI
-│   ├── dbn-go-live/        # Live feed handler
-│   ├── dbn-go-mcp/         # MCP (Model Context Protocol) server
-│   ├── dbn-go-slurp-docs/  # Databento docs scraper
-│   └── dbn-go-tui/         # Terminal UI for Databento account
-├── internal/               # Internal packages
-│   ├── file/               # File processing (JSON writer, Parquet, split)
-│   └── tui/                # TUI components
-├── tests/                  # Test data and shell scripts
-└── tests/data/             # Sample DBN files
+├── live/                   # Live API client
+├── internal/
+│   └── version/            # Version string for Live client field (non-public API)
+├── tests/
+│   ├── data/               # Sample DBN files
+│   └── stype_matrix/       # Optional symbology probe (go run)
+├── Taskfile.yml
+├── README.md
+├── AGENTS.md
+├── CHANGELOG.md
+├── LICENSE.txt
+└── CODE_OF_CONDUCT.md
 ```
 
-## Build System
+## Build and test
 
-Use **Task** (taskfile.yml) for builds:
+Prefer plain Go:
 
-```bash
-task              # Default: test and build
-task build        # Build all binaries to bin/
-task test         # Run Go tests
-task test-all     # Run tests + CLI tool tests
-task clean        # Remove built binaries
-task list         # Show all tasks
-```
-
-Direct Go commands also work:
 ```bash
 go build ./...
 go test ./...
 ```
 
-## Testing
+Optional Task shortcuts (`Taskfile.yml`):
 
-- **Framework**: Ginkgo v2 + Gomega (BDD style)
-- **Test package**: `dbn_test` (external) for most tests
-- **Test data**: Sample DBN files in `tests/data/`
-- **API tests**: Some tests require `DATABENTO_API_KEY` env var
-
-Running tests without API calls:
 ```bash
-go test && go test ./live
+task              # default: same as task test
+task test         # go test ./...
+task test-integration   # integration hist + verbose live (needs credentials where applicable)
+task go-tidy
+task go-lint
 ```
 
-## Code Style
+Offline-safe tests:
 
-### File Header
-All Go files must include:
+```bash
+go test ./...
+go test ./live
+```
+
+Some `hist` tests need `-tags=integration` and `DATABENTO_API_KEY`; see `hist/hist_integration_test.go`.
+
+## Code style
+
+### File header
+
+Go files should retain the upstream copyright header pattern, e.g.:
+
 ```go
-// Copyright (c) 2024-2025 Neomantra Corp
+// Copyright (c) 2024 Neomantra Corp
 ```
 
-### Naming Conventions
-- **Exported types**: PascalCase (e.g., `DbnScanner`, `OhlcvMsg`)
-- **Enums**: SCREAMING_SNAKE_CASE for constants with type prefix
-  - e.g., `Schema_Ohlcv1S`, `SType_InstrumentId`, `RType_Mbp0`
-- **Private helpers**: camelCase with `_Raw` suffix for binary decoders
-- **Generic constraints**: `RecordPtr[T]` interface for type-safe reading
+### Naming (matches upstream)
 
-### Package Organization
-- Root package: `dbn`
-- Historical API: `dbn_hist` (import path `github.com/NimbleMarkets/dbn-go/hist`)
-- Live API: `dbn_live` (import path `github.com/NimbleMarkets/dbn-go/live`)
+- Exported types: PascalCase (`DbnScanner`, `OhlcvMsg`)
+- Enum-like constants: type prefix with underscores (`Schema_Ohlcv1S`, `SType_InstrumentId`, `RType_Mbp0`)
+- Binary decoders: `Fill_Raw`, `Fill_Json` on record types
+- Generic constraint: `RecordPtr[T]` for typed decoding
 
-### Error Handling
-- Use sentinel errors defined in `errors.go`
-- Wrap errors with context: `fmt.Errorf("context: %w", err)`
-- Explicit error returns, no panic for expected errors
+### Package layout
 
-## Key Patterns
+- Root import path: `github.com/WT-In/dbn-go` → package `dbn`
+- Historical: `github.com/WT-In/dbn-go/hist` → package `dbn_hist`
+- Live: `github.com/WT-In/dbn-go/live` → package `dbn_live`
 
-### 1. Scanner Pattern (Streaming)
+### Errors
+
+- Sentinels in `errors.go`; wrap with `fmt.Errorf("context: %w", err)` where appropriate.
+
+## Patterns
+
+### Scanner
+
 ```go
 scanner := dbn.NewDbnScanner(reader)
 for scanner.Next() {
     record, err := dbn.DbnScannerDecode[dbn.OhlcvMsg](scanner)
-    // handle record
+    _ = record
+    _ = err
 }
 ```
 
-### 2. Visitor Pattern (Type Dispatch)
-```go
-type MyVisitor struct{}
-func (v *MyVisitor) OnOhlcv(record *dbn.OhlcvMsg) error { ... }
-// ... implement other OnXxx methods
+### Visitor dispatch
 
-scanner.Visit(visitor)  // Dispatches to appropriate handler
-```
+Implement `dbn.Visitor` and call `scanner.Visit(visitor)`.
 
-### 3. Generic Slice Reading
-```go
-records, metadata, err := dbn.ReadDBNToSlice[dbn.OhlcvMsg](reader)
-```
+### Compression
 
-### 4. Compression Handling
 ```go
 file, closer, err := dbn.MakeCompressedReader("file.dbn.zstd", false)
 defer closer.Close()
 ```
 
-## MCP Server (`cmd/dbn-go-mcp`)
+## DBN format notes
 
-The MCP server (`dbn-go-mcp`) bridges LLMs and Databento's Historical API via the Model Context Protocol. Key architecture notes:
+- Little-endian binary; versions 1–3 with upgrades in scanner paths for mixed-version streams.
+- Record header: 16 bytes (`RHeader_Size`).
+- Prices: fixed-point scale `FIXED_PRICE_SCALE = 1e9`.
 
-- **Single file**: All code is in `cmd/dbn-go-mcp/main.go`
-- **Library**: Uses `github.com/mark3labs/mcp-go` for MCP protocol handling
-- **Transports**: STDIO (default) and SSE
-- **Error convention**: Tool handlers return errors as `mcp.NewToolResultError()` (not Go errors), so the LLM can see and reason about failures
-- **Shared validation**: `parseCommonParams()` extracts/validates dataset, schema, symbol, start, end from tool requests; `commonParams.metadataQueryParams()` builds the hist API query struct
-- **Cost guard**: `get_range` checks estimated cost against `--max-cost` budget before fetching data
+Details: [Databento DBN encoding](https://databento.com/docs/knowledge-base/new-users/dbn-encoding), upstream Rust [databento/dbn](https://github.com/databento/dbn).
 
-### MCP Tools (10 total)
+## Dependencies (`go.mod`)
 
-Discovery tools (no billing): `list_datasets`, `list_publishers`, `list_schemas`, `list_fields`, `get_dataset_range`, `get_dataset_condition`, `list_unit_prices`, `resolve_symbols`
+- `github.com/valyala/fastjson` — JSON record parsing
+- `github.com/klauspost/compress` — zstd for `MakeCompressedReader` / `MakeCompressedWriter`
+- `github.com/onsi/ginkgo/v2`, `github.com/onsi/gomega` — tests
 
-Query tools: `get_cost` (metadata only), `get_range` (incurs billing, returns JSON)
+## Important notes
 
-### Adding New Tools
+1. Not affiliated with Databento; API usage and charges are the user’s responsibility.
+2. Typical env var for API examples: `DATABENTO_API_KEY`.
+3. Preserve DBN v1 compatibility where upstream did.
+4. JSON decoding uses fastjson + hand-written field binding, not only `encoding/json`.
 
-1. Define the tool with `mcp.NewTool()` in `registerTools()`, using `mcp.WithDescription()` and typed parameters
-2. Write a handler `func(ctx, mcp.CallToolRequest) (*mcp.CallToolResult, error)` — return errors via `mcp.NewToolResultErrorf()`, not as Go errors
-3. For tools using dataset/schema/symbol/date params, reuse `parseCommonParams()`
-4. Register with `mcpServer.AddTool(tool, handler)`
+## References
 
-## DBN Format Notes
-
-- **Encoding**: Little-endian binary
-- **Versions**: 1, 2, and 3
-  - v1→v2: symbol strings expanded from 22 to 71 bytes
-  - v2→v3: `StatMsg.Quantity` widened from int32 to int64; `InstrumentDefMsg` gains multi-leg fields, `RawInstrumentID` widened from uint32 to uint64, 4 fields removed
-  - The scanner always upgrades records to v3 layout; `StatMsg` and `InstrumentDefMsg` are aliases for their V3 types
-  - V1 `InstrumentDefMsg` (22-byte symbols) is decoded and upgraded to V3 like V2
-- **Structure**: Metadata header → Records
-- **Record Header**: 16 bytes (`RHeader_Size`)
-  - Length (1 byte), RType (1 byte), PublisherID (2 bytes), InstrumentID (4 bytes), TsEvent (8 bytes)
-- **Price Format**: Fixed-point 9 decimal places (`FIXED_PRICE_SCALE = 1e9`)
-
-## Key Types
-
-### Record Types (RType)
-`Mbp0Msg`, `Mbp1Msg`, `Mbp10Msg`, `MboMsg`, `OhlcvMsg`, `Cmbp1Msg`, `BboMsg`, `ImbalanceMsg`, `StatusMsg`, `InstrumentDefMsg`, `StatMsg`, `ErrorMsg`, `SystemMsg`, `SymbolMappingMsg`
-
-### Versioned Types
-`StatMsg` and `InstrumentDefMsg` are aliases for `StatMsgV3` and `InstrumentDefMsgV3`. Versioned structs (`StatMsgV2`, `InstrumentDefMsgV1`, `InstrumentDefMsgV2`, `SymbolMappingMsgV1`, `SymbolMappingMsgV2`) exist for direct decoding of older formats.
-
-### Version-Aware Decoding
-`DbnScanner.Visit()` automatically upgrades V1/V2 records to V3 before passing to the Visitor. For typed decoding, use `scanner.DecodeStatMsg()` and `scanner.DecodeInstrumentDefMsg()` instead of the generic `DbnScannerDecode` (which does not upgrade). The `JsonScanner` uses tolerant parsing to handle both V2 (bare number) and V3 (quoted string) JSON formats.
-
-### Enums (in consts.go)
-- `Side`: `Side_Ask`, `Side_Bid`, `Side_None`
-- `Action`: `Action_Add`, `Action_Cancel`, `Action_Modify`, `Action_Trade`, etc.
-- `Schema`: `Schema_Ohlcv1S`, `Schema_Mbp1`, etc.
-- `SType`: `SType_RawSymbol`, `SType_InstrumentId`
-
-## Dependencies
-
-Key external deps (see `go.mod`):
-- `github.com/valyala/fastjson` - Fast JSON parsing
-- `github.com/spf13/cobra` - CLI framework
-- `github.com/charmbracelet/bubbletea/lipgloss/huh` - TUI framework
-- `github.com/apache/arrow-go/v18` - Parquet support
-- `github.com/mark3labs/mcp-go` - MCP server
-- `github.com/onsi/ginkgo/v2` + `github.com/onsi/gomega` - Testing
-
-## Release Process
-
-Uses **GoReleaser** (`.goreleaser.yaml`):
-- Builds 5 CLI binaries for Linux/macOS/Windows
-- Publishes to GitHub Releases
-- Updates Homebrew tap (NimbleMarkets/homebrew-tap)
-
-Trigger on git tag push:
-```bash
-git tag v1.x.x
-git push origin v1.x.x
-```
-
-## Important Notes
-
-1. **Not affiliated with Databento** - users are responsible for API charges
-2. **API Key**: Set via `DATABENTO_API_KEY` environment variable
-3. **DBN versions**: Maintain backward compatibility with v1 files
-4. **JSON handling**: Uses fastjson, not encoding/json, for performance
-5. **Binary layout**: Matches Databento's Rust DBN implementation
-
-## Reference Links
-
-- Databento DBN spec: https://databento.com/docs/knowledge-base/new-users/dbn-encoding
-- Upstream Rust DBN: https://github.com/databento/dbn
-- Package docs: https://pkg.go.dev/github.com/NimbleMarkets/dbn-go
+- DBN layout: https://databento.com/docs/knowledge-base/new-users/dbn-encoding
+- Rust reference: https://github.com/databento/dbn
+- This module (if public on pkg.go.dev): https://pkg.go.dev/github.com/WT-In/dbn-go
