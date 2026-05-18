@@ -711,6 +711,7 @@ type SystemMsg struct {
 
 const SystemMsg_MsgSize = 303
 const SystemMsg_Size = RHeader_Size + SystemMsg_MsgSize + 1
+const systemMsgHeartbeatText = "Heartbeat"
 
 func (*SystemMsg) RType() RType {
 	return RType_System
@@ -747,11 +748,11 @@ func (r *SystemMsg) IsHeartbeat() bool {
 	if r.Code == SystemCode_Heartbeat {
 		return true
 	}
-	// Fallback to string check for backwards compatibility
-	if bytes.Equal(r.Message[:], []byte(SystemCodeString_Heartbeat)) {
-		return true
+	if r.Code != SystemCode_Unset {
+		return false
 	}
-	return false
+	msg := bytes.TrimRight(r.Message[:], "\x00")
+	return bytes.Equal(msg, []byte(systemMsgHeartbeatText)) || bytes.Equal(msg, []byte(SystemCodeString_Heartbeat))
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -173,6 +173,26 @@ func (s *DbnScanner) DecodeErrorMsg() (*ErrorMsgV2, error) {
 	return DecodeErrorMsg(s.metadata, s.lastRecord)
 }
 
+// DecodeSystemMsg parses the Scanner's current record as a SystemMsg (V2 layout).
+// V1 records are automatically upgraded to V2.
+func (s *DbnScanner) DecodeSystemMsg() (*SystemMsg, error) {
+	if s.lastSize <= RHeader_Size {
+		return nil, ErrNoRecord
+	}
+	recordLen := 4 * int(s.lastRecord[0])
+	if s.lastSize < recordLen {
+		return nil, ErrMalformedRecord
+	}
+	if s.metadata == nil {
+		return nil, ErrNoMetadata
+	}
+	rtype := RType(s.lastRecord[1])
+	if !rtype.IsCompatibleWith(RType_System) {
+		return nil, unexpectedRTypeError(rtype, RType_System)
+	}
+	return DecodeSystemMsg(s.metadata, s.lastRecord)
+}
+
 // DecodeSymbolMappingMsg parses the Scanner's current record as a `SymbolMappingMsg`.
 // This is outside the DbnScannerDecode function because SymbolMappingMsg.Fill_Raw
 // is two-argum,ent, depending on the DbnScanner's metadata's SymbolCstrLen.
@@ -337,12 +357,14 @@ func (s *DbnScanner) Visit(visitor Visitor) error {
 		}
 	// System
 	case RType_System:
-		record := SystemMsg{}
-		if err := record.Fill_Raw(s.lastRecord[:SystemMsg_Size]); err != nil {
-			return err // TODO: OnError()
-		} else {
-			return visitor.OnSystemMsg(&record)
+		if s.metadata == nil {
+			return ErrNoMetadata
 		}
+		record, err := DecodeSystemMsg(s.metadata, s.lastRecord)
+		if err != nil {
+			return err
+		}
+		return visitor.OnSystemMsg(record)
 	// Statistics (version-aware: V1/V2 = 64 bytes, V3 = 80 bytes)
 	case RType_Statistics:
 		if s.metadata == nil {

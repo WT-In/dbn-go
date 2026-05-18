@@ -7,6 +7,8 @@
 
 package dbn
 
+import "strings"
+
 /////////////////////////////////////////////////////////////////////////////
 // Version-aware decoders for records that differ across DBN versions.
 // These convert V1/V2 records up to the V3 layout (the canonical type).
@@ -31,6 +33,55 @@ func DecodeErrorMsg(metadata *Metadata, body []byte) (*ErrorMsgV2, error) {
 		return &v2, nil
 	default:
 		return nil, ErrInvalidDBNVersion
+	}
+}
+
+// DecodeSystemMsg decodes a SystemMsg, upgrading from V1 if needed.
+// V1 only has a short message and no explicit system code.
+func DecodeSystemMsg(metadata *Metadata, body []byte) (*SystemMsg, error) {
+	switch metadata.VersionNum {
+	case HeaderVersion1:
+		var v1 SystemMsgV1
+		if err := v1.Fill_Raw(body[:SystemMsgV1_Size]); err != nil {
+			return nil, err
+		}
+		return upgradeSystemMsgV1ToV2(&v1), nil
+	case HeaderVersion2, HeaderVersion3:
+		var v2 SystemMsg
+		if err := v2.Fill_Raw(body[:SystemMsg_Size]); err != nil {
+			return nil, err
+		}
+		return &v2, nil
+	default:
+		return nil, ErrInvalidDBNVersion
+	}
+}
+
+func upgradeSystemMsgV1ToV2(v1 *SystemMsgV1) *SystemMsg {
+	v2 := &SystemMsg{
+		Header: v1.Header,
+		Code:   systemCodeFromV1Message(v1.Message[:]),
+	}
+	v2.Header.Length = SystemMsg_Size / 4
+	copy(v2.Message[:], v1.Message[:])
+	return v2
+}
+
+func systemCodeFromV1Message(message []byte) SystemCode {
+	msg := TrimNullBytes(message)
+	switch {
+	case msg == systemMsgHeartbeatText:
+		return SystemCode_Heartbeat
+	case strings.HasPrefix(msg, "End of interval for "):
+		return SystemCode_EndOfInterval
+	case strings.HasPrefix(msg, "Subscription request ") && strings.HasSuffix(msg, " succeeded"):
+		return SystemCode_SubscriptionAck
+	case strings.HasPrefix(msg, "Warning: slow reading"):
+		return SystemCode_SlowReaderWarning
+	case strings.HasPrefix(msg, "Finished ") && strings.HasSuffix(msg, " replay"):
+		return SystemCode_ReplayCompleted
+	default:
+		return SystemCode_Unset
 	}
 }
 
