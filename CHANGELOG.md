@@ -1,6 +1,15 @@
 # CHANGELOG
 
-## [Unreleased]
+## [Unreleased] (WT-In fork)
+
+This is an internal fork (`github.com/WT-In/dbn-go`) of [NimbleMarkets/dbn-go](https://github.com/NimbleMarkets/dbn-go). The fork is **library-only**: all `cmd/` tools, MCP servers, TUI, internal file utilities, Hugo docs site, Docker image, and GoReleaser pipelines were removed. **No intentional changes** to the public Go API surface vs upstream baseline around v0.9.1.
+
+  * remove: `cmd/dbn-go-{file,hist,live,tui,mcp-meta,mcp-data,slurp-docs}`, `internal/{tui,mcp_meta,mcp_data,file}`
+  * remove: `docs/` (Hugo site), `Dockerfile`, `.goreleaser.yaml`, `.gitmodules`
+  * remove: GitHub workflows for Docker, GoReleaser release, Pages
+  * fix: docs and CI aligned with module path `github.com/WT-In/dbn-go`
+
+### Prior upstream entries ([Unreleased])
 
   * **Bug fix:** `SystemMsg` decoding for DBN v1 streams (80-byte wire layout). Added `SystemMsgV1`, version-aware `DecodeSystemMsg`, and `DbnScanner.DecodeSystemMsg`. `DbnScanner.Visit` previously called `SystemMsg.Fill_Raw` with the v2 size only, reading `code` from stale scratch-buffer bytes when the gateway sent v1 records.
   * **Bug fix:** `SystemMsg.Fill_Json` infers `code` from the message body when the JSON object omits `code` (v1-style JSON), using the same string patterns as databento-cpp `SystemMsg::ToV2`.

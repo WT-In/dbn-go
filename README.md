@@ -1,59 +1,36 @@
-# dbn-go - Golang bindings to DBN
+# dbn-go — Go library for DBN and Databento APIs
 
-<p>
-    <a href="https://github.com/NimbleMarkets/dbn-go/tags"><img src="https://img.shields.io/github/tag/NimbleMarkets/dbn-go.svg" alt="Latest Tag"></a>
-    <a href="https://pkg.go.dev/github.com/NimbleMarkets/dbn-go"><img src="https://pkg.go.dev/badge/github.com/NimbleMarkets/dbn-go.svg" alt="Go Reference"></a>
-    <a href="https://github.com/NimbleMarkets/dbn-go/blob/main/CODE_OF_CONDUCT.md"><img src="https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg"  alt="Code Of Conduct"></a>
-    <a href="https://NimbleMarkets.github.io/dbn-go/"><img src="https://img.shields.io/badge/docs-book-blue.svg" alt="Documentation"></a>
-</p>
+**Go bindings** for [Databento](https://databento.com)'s [DBN (Databento Binary Encoding)](https://databento.com/docs/knowledge-base/new-users/dbn-encoding), the **Historical API**, and the **Live API**.
 
-**Golang tooling for Databento's APIs and DBN format**
+This fork (`github.com/WT-In/dbn-go`) is **library-only**: no bundled CLIs or docs site. It is forked from [NimbleMarkets/dbn-go](https://github.com/NimbleMarkets/dbn-go) under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0); see [LICENSE.txt](./LICENSE.txt).
 
-This repository contains Golang bindings to [Databento's](https://databento.com) file format [Databento Binary Encoding (DBN)](https://databento.com/docs/knowledge-base/new-users/dbn-encoding), [Historical API](#historical-api), and [Live API](#live-api).  It also includes [tools](./cmd/README.md) to interact with these services.
+**NOTE:** Not affiliated with Databento. Historical and Live APIs may incur billing; you are responsible for API usage and charges.
 
- * [Library Usage](#library-usage)
- * [Reading DBN Files](#reading-dbn-files)
- * [Reading JSON Files](#reading-json-files)
- * [Historical API](#historical-api)
- * [Live API](#live-api)
- * [Tools](#tools)
-   * [Tool Installation](./cmd/README.md#installation)
+## Contents
 
-**NOTE:** This library is **not** affiliated with Databento.  Please be careful with commands which incur billing.  We are not responsible for any charges you incur.
+- [Library usage](#library-usage)
+- [Reading DBN files](#reading-dbn-files)
+- [Reading JSON files](#reading-json-files)
+- [Historical API](#historical-api)
+- [Live API](#live-api)
 
+## Library usage
 
-## Library Usage
-
-To use this library, import the following package, optionally with Databento Historical or Live support:
+Import the root package for DBN decoding, plus optional subpackages for HTTP APIs:
 
 ```go
 import (
-    dbn "github.com/NimbleMarkets/dbn-go"
-    dbn_hist "github.com/NimbleMarkets/dbn-go/hist"
-    dbn_live "github.com/NimbleMarkets/dbn-go/live"
+    dbn "github.com/WT-In/dbn-go"
+    dbn_hist "github.com/WT-In/dbn-go/hist"
+    dbn_live "github.com/WT-In/dbn-go/live"
 )
 ```
 
-Most `dbn-go` [types](./structs.go) and [enums](./consts.go) parallel Databento's libraries.  Available messages types are:
+Most types live in [`structs.go`](structs.go) and enums in [`consts.go`](consts.go). Message types include `Mbp0Msg`, `MboMsg`, `Mbp1Msg`, `Cmbp1Msg`, `Mbp10Msg`, `OhlcvMsg`, `ImbalanceMsg`, `SymbolMappingMsg`, `ErrorMsg`, `SystemMsg`, `StatMsg`, `StatusMsg`, `InstrumentDefMsg`, and related versioned structs.
 
-  * [`Mbp0Msg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#Mbp0Msg)
-  * [`MboMsg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#MboMsg)
-  * [`Mbp1Msg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#Mbp1Msg)
-  * [`Cmbp1Msg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#Cmbp1Msg)
-  * [`Mbp10Msg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#Mbp10Msg)
-  * [`OhlcvMsg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#OhlcvMsg)
-  * [`ImbalanceMsg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#ImbalanceMsg)
-  * [`SymbolMappingMsg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#SymbolMappingMsg)
-  * [`ErrorMsg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#ErrorMsg)
-  * [`SystemMsg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#SystemMsg)
-  * [`StatMsg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#StatMsg)
-  * [`StatusMsg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#StatusMsg)
-  * [`InstrumentDefMsg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#InstrumentDefMsg)
+## Reading DBN files
 
-
-## Reading DBN Files
-
-If you want to read a homogeneous array of DBN records from a file, use the [`dbn.ReadDBNToSlice`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#ReadDBNToSlice) generic function. We include an `io.Reader` wrapper, [`dbn.MakeCompressedReader`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#MakeCompressedReader), that automatically handles `zstd`-named files.  The generic argument dicates which message type to read.
+For a homogeneous slice of records, use [`ReadDBNToSlice`](https://pkg.go.dev/github.com/WT-In/dbn-go#ReadDBNToSlice). [`MakeCompressedReader`](https://pkg.go.dev/github.com/WT-In/dbn-go#MakeCompressedReader) wraps an `io.Reader` for `.zst` / `.zstd` inputs.
 
 ```go
 file, closer, err := dbn.MakeCompressedReader("ohlcv-1s.dbn.zstd", false)
@@ -64,118 +41,85 @@ defer closer.Close()
 records, metadata, err := dbn.ReadDBNToSlice[dbn.OhlcvMsg](file)
 ```
 
-Alternatively, you can use the [`DBNScanner`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#DbnScanner) to read records one-by-one.  Each record can be handled directly, or automatically dispatched to the callback method of a struct that implements the [`dbn.Visitor` interface](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#Visitor).
+For streaming, use [`DbnScanner`](https://pkg.go.dev/github.com/WT-In/dbn-go#DbnScanner) and optionally the [`Visitor`](https://pkg.go.dev/github.com/WT-In/dbn-go#Visitor) interface:
 
 ```go
-dbnFile, _ := os.Open("ohlcv-1s.dbn")
+dbnFile, err := os.Open("ohlcv-1s.dbn")
+if err != nil {
+    return err
+}
 defer dbnFile.Close()
 
 dbnScanner := dbn.NewDbnScanner(dbnFile)
 metadata, err := dbnScanner.Metadata()
 if err != nil {
-	return fmt.Errorf("scanner failed to read metadata: %w", err)
+    return fmt.Errorf("scanner failed to read metadata: %w", err)
 }
 for dbnScanner.Next() {
-    header := dbnScanner.GetLastHeader()
+    header, err := dbnScanner.GetLastHeader()
+    if err != nil {
+        return err
+    }
     fmt.Printf("rtype: %s  ts: %d\n", header.RType, header.TsEvent)
-
-    // you could get the raw bytes and size:
-    lastRawByteArray := dbnScanner.GetLastRecord()
-    lastSize := dbnScanner.GetLastSize()
-
-    // you probably want to use this generic helper to crack the message:
-    ohlcv, err := dbn.DbnScannerDecode[dbn.OhlcvMsg](dbnScanner)
-
-    // or if you are handing multiple message types, dispatch a Visitor:
-    err = dbnScanner.Visit(visitor)
+    _, err = dbn.DbnScannerDecode[dbn.OhlcvMsg](dbnScanner)
+    if err != nil {
+        return err
+    }
+    // or: err = dbnScanner.Visit(visitor)
 }
 if err := dbnScanner.Error(); err != nil && err != io.EOF {
     return fmt.Errorf("scanner error: %w", err)
 }
 ```
 
+## Reading JSON files
 
-## Reading JSON Files
-
-If you already have DBN-based JSON text files, you can use the generic [`dbn.ReadJsonToSlice`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#ReadJsonToSlice) or [`dbn.JsonScanner`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#JsonScanner) to read them in as `dbn-go` structs.  Similar to the raw DBN, you can handle records manually or use the [`dbn.Visitor` interface](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go#Visitor).
-
-```go
-jsonFile, _ := os.Open("ohlcv-1s.dbn.json")
-defer jsonFile.Close()
-records, metadata, err := dbn.ReadJsonToSlice[dbn.OhlcvMsg](jsonFile)
-```
+Use [`ReadJsonToSlice`](https://pkg.go.dev/github.com/WT-In/dbn-go#ReadJsonToSlice) or [`JsonScanner`](https://pkg.go.dev/github.com/WT-In/dbn-go#JsonScanner) for DBN-shaped JSON streams. Structs use [`valyala/fastjson`](https://github.com/valyala/fastjson) for decoding, not only `encoding/json`.
 
 ```go
-jsonFile, _ := os.Open("ohlcv-1s.dbn.json")
+jsonFile, err := os.Open("ohlcv-1s.dbn.json")
+if err != nil {
+    return err
+}
 defer jsonFile.Close()
-jsonScanner := dbn.NewJsonScanner(jsonFile)
-for jsonScanner.Next() {
-    if err := jsonScanner.Visit(visitor); err != nil {
-        return fmt.Errorf("visitor err: %w", err)
-    }
-}
-if err := jsonScanner.Error(); err != nil {
-    fmt.Errorf("scanner err: %w", err)
-}
+records, err := dbn.ReadJsonToSlice[dbn.OhlcvMsg](jsonFile)
 ```
-
-Many of the `dbn-go` structs are annotated with `json` tags to facilitate JSON serialization and deserialization using `json.Marshal` and `json.Unmarshal`.  That said, `dbn-go` uses [`valyala/fastjson`](https://github.com/valyala/fastjson) and hand-written extraction code.
-
 
 ## Historical API
 
-Support for the [Databento Historical API](https://databento.com/docs/api-reference-historical) is available in the [`/hist`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go/hist) folder.  Every API method is a function that takes an API key and arguments and returns a response struct and error.
+Functions in [`hist`](https://pkg.go.dev/github.com/WT-In/dbn-go/hist) map to [Databento Historical API](https://databento.com/docs/api-reference-historical) endpoints. Each takes an API key string plus parameters and returns typed values and `error`.
 
+```go
+apiKey := os.Getenv("DATABENTO_API_KEY")
+schemas, err := dbn_hist.ListSchemas(apiKey, "EQUS.MINI")
 ```
-databentoApiKey := os.Getenv("DATABENTO_API_KEY")
-schemas, err := dbn_hist.ListSchemas(databentoApiKey, "EQUS.MINI")
-```
 
-The source for `dbn-go-hist` illustrates [using this `dbn_hist` module](https://github.com/NimbleMarkets/dbn-go/blob/main/cmd/dbn-go-hist/main.go#L104).
-
+Integration-style tests use `-tags=integration` and `DATABENTO_API_KEY`; see [`hist/hist_integration_test.go`](hist/hist_integration_test.go).
 
 ## Live API
 
-Support for the [Databento Live API](https://databento.com/docs/api-reference-live) is available in the [`/live`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go/live) folder.
+[`live`](https://pkg.go.dev/github.com/WT-In/dbn-go/live) implements the TCP gateway protocol for [Databento Live](https://databento.com/docs/api-reference-live):
 
-The general model is:
+1. [`NewLiveClient`](https://pkg.go.dev/github.com/WT-In/dbn-go/live#NewLiveClient) with [`LiveConfig`](https://pkg.go.dev/github.com/WT-In/dbn-go/live#LiveConfig)
+2. [`Authenticate`](https://pkg.go.dev/github.com/WT-In/dbn-go/live#LiveClient.Authenticate)
+3. [`Subscribe`](https://pkg.go.dev/github.com/WT-In/dbn-go/live#LiveClient.Subscribe)
+4. [`Start`](https://pkg.go.dev/github.com/WT-In/dbn-go/live#LiveClient.Start)
+5. Read with [`GetDbnScanner`](https://pkg.go.dev/github.com/WT-In/dbn-go/live#LiveClient.GetDbnScanner) or [`GetJsonScanner`](https://pkg.go.dev/github.com/WT-In/dbn-go/live#LiveClient.GetJsonScanner)
 
-  1. Use [`dbn_live.NewLiveClient`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go/live#NewLiveClient) to create a [`LiveClient`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go/live#LiveClient) based on a [`LiveConfig`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go/live#LiveConfig) and connect to a DBN gateway
-  2. [`client.Authenticate`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go/live#LiveClient.Authenticate) with the gateway.
-  3. [`client.Subscribe`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go/live#LiveClient.Subscribe) to a stream using one or many [`SubscriptionRequestMsg`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go/live#SubscriptionRequestMsg).
-  4. Begin the stream with [`client.Start`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go/live#LiveClient.Start).
-  5. Read the stream using [`client.GetDbnScanner`](https://pkg.go.dev/github.com/NimbleMarkets/dbn-go/live#LiveClient.GetDbnScanner).
+## Development
 
-The source for `dbn-go-live` illustrates [using this `dbn_live` module](https://github.com/NimbleMarkets/dbn-go/blob/main/cmd/dbn-go-live/main.go#L111).
-
-
-## Tools
-
-We include [some tools](./cmd/README.md) to make our lives easier. [Installation instructions](./cmd/README.md#installation)
-
- * [`dbn-go-file`](./cmd/README.md#dbn-go-file): a CLI to process DBN files
- * [`dbn-go-hist`](./cmd/README.md#dbn-go-hist): a CLI to use the Historical API
- * [`dbn-go-live`](./cmd/README.md#dbn-go-live): a simple Live API feed handler
- * [`dbn-go-mcp-meta`](./cmd/README.md#dbn-go-mcp-meta): Metadata-only MCP server (no billing risk)
- * [`dbn-go-mcp-data`](./cmd/README.md#dbn-go-mcp-data): Database-Backed Data Ingestion MCP server
- * [`dbn-go-slurp-docs`](./cmd/README.md#dbn-go-slurp-docs): a tool to scrape Databento docs for offline use
- * [`dbn-go-tui`](./cmd/README.md#dbn-go-tui): a TUI for your Databento account
-
-## Open Collaboration
-
-We welcome contributions and feedback.  Please adhere to our [Code of Conduct](./CODE_OF_CONDUCT.md) when engaging our community.
-
- * [GitHub Issues](https://github.com/NimbleMarkets/dbn-go/issues)
- * [GitHub Pull Requests](https://github.com/NimbleMarkets/dbn-go/pulls)
-
+```bash
+go test ./...
+task test          # same as above via Taskfile
+go test -tags=integration ./hist   # optional; needs DATABENTO_API_KEY
+```
 
 ## License
 
-Released under the [Apache License, version 2.0](https://www.apache.org/licenses/LICENSE-2.0), see [LICENSE.txt](./LICENSE.txt).
+Released under the [Apache License, version 2.0](https://www.apache.org/licenses/LICENSE-2.0); see [LICENSE.txt](./LICENSE.txt).
 
-Portions adapted from [`databento/dbn`](https://github.com/databento/dbn) [`databendo/databento-rs`](https://github.com/databento/databento-rs) under the same Apache license.
+Portions adapted from [`databento/dbn`](https://github.com/databento/dbn) and [`databento/databento-rs`](https://github.com/databento/databento-rs) under the same license.
 
-Copyright (c) 2024-2026 [Neomantra Corp](https://www.neomantra.com).   
+Copyright (c) 2024–2026 [Neomantra Corp](https://www.neomantra.com).
 
-----
-Made with :heart: and :fire: by the team behind [Nimble.Markets](https://nimble.markets).
+Upstream tooling and documentation originated with [Nimble.Markets](https://nimble.markets).
