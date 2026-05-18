@@ -7,9 +7,61 @@
 
 package dbn
 
+import (
+	"strings"
+)
+
 /////////////////////////////////////////////////////////////////////////////
 // Version-aware decoders for records that differ across DBN versions.
 // These convert V1/V2 records up to the V3 layout (the canonical type).
+
+// inferSystemCodeFromV1Message derives the SystemCode of a DBN v1 system
+// message from its text. V1 system messages have no `code` field on the wire,
+// so the message kind must be reconstructed from well-known prefixes/suffixes
+// emitted by the Databento Live Subscription Gateway.
+// Mirrors `From<&v1::SystemMsg> for v2::SystemMsg` in databento/dbn (rust/dbn/src/v2.rs)
+// and `SystemMsgV1::Upgrade()` in databento-cpp (src/v1.cpp).
+func inferSystemCodeFromV1Message(msg string) SystemCode {
+	switch {
+	case msg == SystemCodeString_Heartbeat:
+		return SystemCode_Heartbeat
+	case strings.HasPrefix(msg, "End of interval for "):
+		return SystemCode_EndOfInterval
+	case strings.HasPrefix(msg, "Subscription request ") && strings.HasSuffix(msg, " succeeded"):
+		return SystemCode_SubscriptionAck
+	case strings.HasPrefix(msg, "Warning: slow reading"):
+		return SystemCode_SlowReaderWarning
+	case strings.HasPrefix(msg, "Finished ") && strings.HasSuffix(msg, " replay"):
+		return SystemCode_ReplayCompleted
+	default:
+		return SystemCode_Unset
+	}
+}
+
+// DecodeSystemMsg decodes a SystemMsg, upgrading from V1 if needed.
+// V1 has a 64-byte text-only payload; the code is inferred from the text.
+// V2/V3 share a 303-byte payload plus an explicit `code` byte.
+func DecodeSystemMsg(metadata *Metadata, body []byte) (*SystemMsg, error) {
+	switch metadata.VersionNum {
+	case HeaderVersion1:
+		var v1 SystemMsgV1
+		if err := v1.Fill_Raw(body[:SystemMsgV1_Size]); err != nil {
+			return nil, err
+		}
+		v2 := SystemMsg{Header: v1.Header}
+		copy(v2.Message[:], v1.Message[:])
+		v2.Code = inferSystemCodeFromV1Message(TrimNullBytes(v1.Message[:]))
+		return &v2, nil
+	case HeaderVersion2, HeaderVersion3:
+		var v2 SystemMsg
+		if err := v2.Fill_Raw(body[:SystemMsg_Size]); err != nil {
+			return nil, err
+		}
+		return &v2, nil
+	default:
+		return nil, ErrInvalidDBNVersion
+	}
+}
 
 // decodeErrorMsg decodes a ErrorMsg, upgrading from V1 if needed.
 // V1 only has a short error message

@@ -335,14 +335,16 @@ func (s *DbnScanner) Visit(visitor Visitor) error {
 		} else {
 			return visitor.OnSymbolMappingMsg(&record)
 		}
-	// System
+	// System (version-aware: V1 = 80 bytes text-only, V2/V3 = 320 bytes with code byte)
 	case RType_System:
-		record := SystemMsg{}
-		if err := record.Fill_Raw(s.lastRecord[:SystemMsg_Size]); err != nil {
-			return err // TODO: OnError()
-		} else {
-			return visitor.OnSystemMsg(&record)
+		if s.metadata == nil {
+			return ErrNoMetadata
 		}
+		record, err := DecodeSystemMsg(s.metadata, s.lastRecord)
+		if err != nil {
+			return err
+		}
+		return visitor.OnSystemMsg(record)
 	// Statistics (version-aware: V1/V2 = 64 bytes, V3 = 80 bytes)
 	case RType_Statistics:
 		if s.metadata == nil {

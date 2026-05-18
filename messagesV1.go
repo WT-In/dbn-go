@@ -112,6 +112,51 @@ func (r *SymbolMappingMsgV1) Fill_Json(val *fastjson.Value, header *RHeader) err
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// SystemMsgV1 is the DBN version 1 system message layout.
+// V1 has no `code` field; the message type must be inferred from the text
+// (see databento/dbn `From<&v1::SystemMsg> for v2::SystemMsg` in rust/dbn/src/v2.rs).
+type SystemMsgV1 struct {
+	Header  RHeader                   `json:"hd" csv:"hd"`   // The common header.
+	Message [SystemMsgV1_MsgSize]byte `json:"msg" csv:"msg"` // The message from the Databento Live Subscription Gateway (LSG).
+}
+
+const SystemMsgV1_MsgSize = 64
+const SystemMsgV1_Size = RHeader_Size + SystemMsgV1_MsgSize
+
+func (*SystemMsgV1) RType() RType {
+	return RType_System
+}
+
+func (*SystemMsgV1) RSize() uint16 {
+	return SystemMsgV1_Size
+}
+
+func (r *SystemMsgV1) Fill_Raw(b []byte) error {
+	if len(b) < SystemMsgV1_Size {
+		return unexpectedBytesError(len(b), SystemMsgV1_Size)
+	}
+	if err := r.Header.Fill_Raw(b[0:RHeader_Size]); err != nil {
+		return err
+	}
+	body := b[RHeader_Size:]
+	copy(r.Message[:], body[:SystemMsgV1_MsgSize])
+	return nil
+}
+
+func (r *SystemMsgV1) Fill_Json(val *fastjson.Value, header *RHeader) error {
+	r.Header = *header
+	copy(r.Message[:], val.GetStringBytes("msg"))
+	return nil
+}
+
+// IsHeartbeat reports whether the V1 system message is a heartbeat.
+// V1 has no code field, so the only signal is the text content.
+func (r *SystemMsgV1) IsHeartbeat() bool {
+	return TrimNullBytes(r.Message[:]) == SystemCodeString_Heartbeat
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 // InstrumentDefMsgV1 is the DBN version 1 instrument definition layout.
 // V1 uses 22-byte raw_symbol, uint32 raw_instrument_id, and places strike_price after the string block.
 // Total record size is 360 bytes (including RHeader). See databento/dbn InstrumentDefMsgV1 in compat.rs.

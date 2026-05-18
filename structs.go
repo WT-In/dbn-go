@@ -19,7 +19,6 @@
 package dbn
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 
@@ -742,16 +741,14 @@ func (r *SystemMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
 }
 
 // IsHeartbeat checks if the system message is a heartbeat.
-// For fullest compatibility, it falls back to a string check
+// For fullest compatibility, it falls back to a string check on the (null-trimmed)
+// message text. This matters for sources that pre-date the `code` field or that
+// route through a code path which did not populate it.
 func (r *SystemMsg) IsHeartbeat() bool {
 	if r.Code == SystemCode_Heartbeat {
 		return true
 	}
-	// Fallback to string check for backwards compatibility
-	if bytes.Equal(r.Message[:], []byte(SystemCodeString_Heartbeat)) {
-		return true
-	}
-	return false
+	return TrimNullBytes(r.Message[:]) == SystemCodeString_Heartbeat
 }
 
 ///////////////////////////////////////////////////////////////////////////////
