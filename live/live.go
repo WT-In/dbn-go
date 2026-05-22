@@ -202,6 +202,7 @@ type LiveClient struct {
 
 	lsgVersion string
 	sessionID  string
+	nextSubID  uint32
 }
 
 // NewLiveClient takes a LiveConfig, creates a LiveClient and tries to connect.
@@ -288,6 +289,10 @@ func (c *LiveClient) Subscribe(sub SubscriptionRequestMsg) error {
 	if len(sub.Symbols) == 0 {
 		return errors.New("subscribe request must contain at least one symbol")
 	}
+	if !sub.HasID {
+		sub.ID = c.nextSubID
+		sub.HasID = true
+	}
 	fixedLen := len(sub.encodeChunk(nil, true))
 	if fixedLen >= SUBSCRIPTION_LINE_MAX {
 		return fmt.Errorf("subscription request fixed fields exceed max line length (%d bytes)", SUBSCRIPTION_LINE_MAX)
@@ -333,6 +338,9 @@ func (c *LiveClient) Subscribe(sub SubscriptionRequestMsg) error {
 
 	if err := flush(true); err != nil {
 		return err
+	}
+	if sub.ID >= c.nextSubID {
+		c.nextSubID = sub.ID + 1
 	}
 
 	if c.config.Verbose {

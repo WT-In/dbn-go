@@ -164,6 +164,8 @@ type SubscriptionRequestMsg struct {
 	Symbols  []string  // key: symbols (comma separated)
 	Start    time.Time // key: time (nanoseconds since epoch)
 	Snapshot bool      // key: snapshot (int)
+	ID       uint32    // key: id
+	HasID    bool      // Whether to encode ID.
 }
 
 // Encode converts SubscriptionRequestMsg to its line protocol representation.
@@ -191,6 +193,9 @@ func (m *SubscriptionRequestMsg) encodeChunk(symbols []string, isLast bool) []by
 		}
 		b = append(b, symbol...)
 		isFirst = false
+	}
+	if m.HasID {
+		b = fmt.Appendf(b, "|id=%d", m.ID)
 	}
 	if isLast {
 		b = append(b, "|is_last=1"...)

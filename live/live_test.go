@@ -204,6 +204,24 @@ var _ = Describe("DbnLive", func() {
 	})
 
 	Context("Subscribe chunking", func() {
+		It("should assign increasing subscription IDs", func() {
+			conn := &writeCapture{}
+			client := &LiveClient{conn: conn}
+
+			sub := SubscriptionRequestMsg{
+				Schema:  "tbbo",
+				StypeIn: dbn.SType_Continuous,
+				Symbols: []string{"ES.c.0"},
+			}
+			Expect(client.Subscribe(sub)).To(Succeed())
+			Expect(client.Subscribe(sub)).To(Succeed())
+
+			lines := bytes.Split(bytes.TrimSpace(conn.buf.Bytes()), []byte{'\n'})
+			Expect(lines).To(HaveLen(2))
+			Expect(string(lines[0])).To(ContainSubstring("|id=0|"))
+			Expect(string(lines[1])).To(ContainSubstring("|id=1|"))
+		})
+
 		It("should emit multiple lines with is_last=0 until final is_last=1", func() {
 			base := SubscriptionRequestMsg{
 				Schema:  "s",
@@ -237,6 +255,7 @@ var _ = Describe("DbnLive", func() {
 			for i, ln := range nonEmpty {
 				Expect(len(ln)).To(BeNumerically("<=", SUBSCRIPTION_LINE_MAX))
 				s := string(ln)
+				Expect(s).To(ContainSubstring("id=0"))
 				if i < len(nonEmpty)-1 {
 					Expect(s).To(ContainSubstring("is_last=0"))
 				} else {
