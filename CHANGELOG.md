@@ -11,6 +11,7 @@ This is an internal fork (`github.com/WT-In/dbn-go`) of [NimbleMarkets/dbn-go](h
 
 ### Prior upstream entries ([Unreleased])
 
+  * **Bug fix:** `ErrorMsg` decoding for DBN v1 streams now infers `ErrorCode` during V1→V2 upgrade, including `Failed to resolve symbol...` → `SYMBOL_RESOLUTION_FAILED`; JSON `ErrorMsg` without `code` uses the same inference.
   * **Bug fix:** `SystemMsg` decoding for DBN v1 streams (80-byte wire layout). Added `SystemMsgV1`, version-aware `DecodeSystemMsg`, and `DbnScanner.DecodeSystemMsg`. `DbnScanner.Visit` previously called `SystemMsg.Fill_Raw` with the v2 size only, reading `code` from stale scratch-buffer bytes when the gateway sent v1 records.
   * **Bug fix:** `SystemMsg.Fill_Json` infers `code` from the message body when the JSON object omits `code` (v1-style JSON), using the same string patterns as databento-cpp `SystemMsg::ToV2`.
   * **Bug fix:** `SystemCodeString_Heartbeat` is now `"Heartbeat"` (mixed case), matching databento-cpp and the live v1 wire convention.

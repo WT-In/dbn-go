@@ -56,7 +56,11 @@ func (r *ErrorMsgV2) Fill_Raw(b []byte) error {
 func (r *ErrorMsgV2) Fill_Json(val *fastjson.Value, header *RHeader) error {
 	r.Header = *header
 	copy(r.Error[:], val.GetStringBytes("err"))
-	r.Code = ErrorCode(uint8(val.GetUint("code")))
+	if val.Exists("code") {
+		r.Code = ErrorCode(uint8(val.GetUint("code")))
+	} else {
+		r.Code = inferErrorCodeFromMessageField(&r.Error)
+	}
 	r.IsLast = uint8(val.GetUint("is_last"))
 	return nil
 }

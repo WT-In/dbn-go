@@ -43,6 +43,28 @@ var _ = Describe("Messages V1", func() {
 		It("should be smaller than V2 due to shorter symbol strings", func() {
 			Expect(dbn.ErrorMsgV1_Size).To(BeNumerically("<", dbn.ErrorMsgV2_Size))
 		})
+
+		It("DecodeErrorMsg should infer v2 code when upgrading v1 errors", func() {
+			md := &dbn.Metadata{VersionNum: dbn.HeaderVersion1}
+			tests := []struct {
+				msg  string
+				want dbn.ErrorCode
+			}{
+				{"User or API key deactivated", dbn.ErrorCode_ApiKeyDeactivated},
+				{"User has reached their open connection limit", dbn.ErrorCode_ConnectionLimitExceeded},
+				{"Failed to resolve symbol 6/100: FSBAL.c.0", dbn.ErrorCode_SymbolResolutionFailed},
+				{"Internal error", dbn.ErrorCode_InternalError},
+				{"Slow client detected for mbo. Skipped records", dbn.ErrorCode_SkippedRecordsAfterSlowReading},
+				{"some unknown v1 error", dbn.ErrorCode_Unset},
+			}
+			for _, tt := range tests {
+				record, err := dbn.DecodeErrorMsg(md, buildV1ErrorWireRecord(tt.msg))
+				Expect(err).To(BeNil())
+				Expect(record.Code).To(Equal(tt.want))
+				Expect(record.Header.Length).To(Equal(uint8(dbn.ErrorMsgV2_Size / 4)))
+				Expect(record.IsLast).To(Equal(uint8(255)))
+			}
+		})
 	})
 
 	Context("SymbolMapping v1 messages", func() {

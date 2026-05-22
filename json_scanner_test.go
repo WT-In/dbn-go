@@ -68,4 +68,18 @@ var _ = Describe("JsonScanner", func() {
 			Expect(msg.Code == dbn.SystemCode_SubscriptionAck).To(BeTrue())
 		})
 	})
+
+	Context("ErrorMsg JSON without code", func() {
+		It("Fill_Json should infer SymbolResolutionFailed from error body", func() {
+			var p fastjson.Parser
+			line := `{"hd":{"ts_event":1,"rtype":29,"publisher_id":0,"instrument_id":0},"err":"Failed to resolve symbol 6/100: FSBAL.c.0"}`
+			val, err := p.Parse(line)
+			Expect(err).To(BeNil())
+			var hdr dbn.RHeader
+			Expect(hdr.Fill_Json(val.Get("hd"))).To(BeNil())
+			var msg dbn.ErrorMsg
+			Expect(msg.Fill_Json(val, &hdr)).To(BeNil())
+			Expect(msg.Code).To(Equal(dbn.ErrorCode_SymbolResolutionFailed))
+		})
+	})
 })

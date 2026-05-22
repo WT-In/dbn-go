@@ -46,10 +46,32 @@ func (v *capturingSystemVisitor) OnSystemMsg(r *dbn.SystemMsg) error {
 	return nil
 }
 
+type capturingErrorVisitor struct {
+	dbn.NullVisitor
+	Errors []dbn.ErrorMsg
+}
+
+func (v *capturingErrorVisitor) OnErrorMsg(r *dbn.ErrorMsg) error {
+	v.Errors = append(v.Errors, *r)
+	return nil
+}
+
 func buildV1SystemWireRecord(msg string) []byte {
 	b := make([]byte, dbn.SystemMsgV1_Size)
 	b[0] = uint8(dbn.SystemMsgV1_Size / 4)
 	b[1] = byte(dbn.RType_System)
+	binary.LittleEndian.PutUint16(b[2:4], 7)
+	binary.LittleEndian.PutUint32(b[4:8], 12345)
+	binary.LittleEndian.PutUint64(b[8:16], 999)
+	copy(b[16:], msg)
+	b[16+len(msg)] = 0
+	return b
+}
+
+func buildV1ErrorWireRecord(msg string) []byte {
+	b := make([]byte, dbn.ErrorMsgV1_Size)
+	b[0] = uint8(dbn.ErrorMsgV1_Size / 4)
+	b[1] = byte(dbn.RType_Error)
 	binary.LittleEndian.PutUint16(b[2:4], 7)
 	binary.LittleEndian.PutUint32(b[4:8], 12345)
 	binary.LittleEndian.PutUint64(b[8:16], 999)
@@ -147,7 +169,31 @@ var _ = Describe("DbnScanner", func() {
 		})
 	})
 
-	// TODO: we should make a test for Error message upgrades, be we have no test file
+	Context("version-aware Visit for ErrorMsg v1", func() {
+		It("should upgrade v1 ErrorMsg via Visit", func() {
+			md := &dbn.Metadata{
+				VersionNum: dbn.HeaderVersion1,
+				Dataset:    "GLBX.MDP3",
+				Schema:     dbn.Schema_Mbp1,
+			}
+			var buf bytes.Buffer
+			Expect(md.Write(&buf)).To(Succeed())
+			buf.Write(buildV1ErrorWireRecord("Failed to resolve symbol 6/100: FSBAL.c.0"))
+
+			scanner := dbn.NewDbnScanner(bytes.NewReader(buf.Bytes()))
+			metadata, err := scanner.Metadata()
+			Expect(err).To(BeNil())
+			Expect(metadata.VersionNum).To(Equal(uint8(dbn.HeaderVersion1)))
+
+			v := &capturingErrorVisitor{}
+			Expect(scanner.Next()).To(BeTrue())
+			Expect(scanner.Visit(v)).To(Succeed())
+			Expect(v.Errors).To(HaveLen(1))
+			Expect(v.Errors[0].Code).To(Equal(dbn.ErrorCode_SymbolResolutionFailed))
+			Expect(v.Errors[0].Header.Length).To(Equal(uint8(dbn.ErrorMsgV2_Size / 4)))
+			Expect(v.Errors[0].IsLast).To(Equal(uint8(255)))
+		})
+	})
 
 	// Version-aware Visit() tests: verify that the scanner upgrades V1/V2 records to V3.
 	Context("version-aware Visit for StatMsg", func() {

@@ -65,12 +65,67 @@ func inferSystemCodeFromMessageField(msg *[SystemMsg_MsgSize]byte) SystemCode {
 	return inferSystemCodeFromText(text)
 }
 
+// inferErrorCodeFromText maps a NUL-terminated or logical error string to an
+// ErrorCode, matching databento-cpp ErrorMsg::ToV2 string patterns in v1.cpp.
+func inferErrorCodeFromText(text []byte) ErrorCode {
+	if bytes.Equal(text, []byte("User or API key deactivated")) {
+		return ErrorCode_ApiKeyDeactivated
+	}
+	if bytes.Equal(text, []byte("User has reached their open connection limit")) {
+		return ErrorCode_ConnectionLimitExceeded
+	}
+	if bytes.HasPrefix(text, []byte("Failed to resolve symbol")) {
+		return ErrorCode_SymbolResolutionFailed
+	}
+	if bytes.Equal(text, []byte("Internal error")) {
+		return ErrorCode_InternalError
+	}
+	if bytes.HasPrefix(text, []byte("Slow client detected for ")) {
+		return ErrorCode_SkippedRecordsAfterSlowReading
+	}
+	return ErrorCode_Unset
+}
+
+// inferErrorCodeV1 applies V1 wire rules: pattern matching runs only when a NUL
+// exists in the 64-byte error field (databento-cpp v1.cpp).
+func inferErrorCodeV1(err [ErrorMsgV1_ErrSize]byte) ErrorCode {
+	n := bytes.IndexByte(err[:], 0)
+	if n < 0 {
+		return ErrorCode_Unset
+	}
+	return inferErrorCodeFromText(err[:n])
+}
+
+// inferErrorCodeFromMessageField infers code from the 302-byte JSON-backed error
+// field after Fill_Json copy: trim trailing NULs, then apply the same patterns as V1→V2.
+func inferErrorCodeFromMessageField(err *[ErrorMsgV2_ErrSize]byte) ErrorCode {
+	end := len(err)
+	for end > 0 && (*err)[end-1] == 0 {
+		end--
+	}
+	text := (*err)[:end]
+	if i := bytes.IndexByte(text, 0); i >= 0 {
+		text = text[:i]
+	}
+	return inferErrorCodeFromText(text)
+}
+
 func upgradeSystemMsgV1ToV2(v1 *SystemMsgV1) *SystemMsg {
 	out := &SystemMsg{}
 	out.Header = v1.Header
 	out.Header.Length = uint8(SystemMsg_Size / 4)
 	copy(out.Message[:], v1.Msg[:])
 	out.Code = inferSystemCodeV1(v1.Msg)
+	return out
+}
+
+func upgradeErrorMsgV1ToV2(v1 *ErrorMsgV1) *ErrorMsgV2 {
+	out := &ErrorMsgV2{}
+	out.Header = v1.Header
+	out.Header.Length = uint8(ErrorMsgV2_Size / 4)
+	copy(out.Error[:], v1.Error[:])
+	out.Code = inferErrorCodeV1(v1.Error)
+	out.IsLast = 255
 	return out
 }
 
@@ -107,16 +162,23 @@ func DecodeSystemMsg(metadata *Metadata, body []byte) (*SystemMsg, error) {
 // decodeErrorMsg decodes a ErrorMsg, upgrading from V1 if needed.
 // V1 only has a short error message
 func DecodeErrorMsg(metadata *Metadata, body []byte) (*ErrorMsgV2, error) {
+	if metadata == nil {
+		return nil, ErrNoMetadata
+	}
 	switch metadata.VersionNum {
 	case HeaderVersion1:
+		if len(body) < ErrorMsgV1_Size {
+			return nil, unexpectedBytesError(len(body), ErrorMsgV1_Size)
+		}
 		var v1 ErrorMsgV1
 		if err := v1.Fill_Raw(body[:ErrorMsgV1_Size]); err != nil {
 			return nil, err
 		}
-		var v2 ErrorMsgV2
-		copy(v2.Error[:], v1.Error[:])
-		return &v2, nil
+		return upgradeErrorMsgV1ToV2(&v1), nil
 	case HeaderVersion2, HeaderVersion3:
+		if len(body) < ErrorMsgV2_Size {
+			return nil, unexpectedBytesError(len(body), ErrorMsgV2_Size)
+		}
 		var v2 ErrorMsgV2
 		if err := v2.Fill_Raw(body[:ErrorMsgV2_Size]); err != nil {
 			return nil, err
