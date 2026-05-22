@@ -13,13 +13,15 @@ import "bytes"
 // Version-aware decoders for records that differ across DBN versions.
 // These convert V1/V2 records up to the V3 layout (the canonical type).
 
+const systemMsgHeartbeatText = "Heartbeat"
+
 // inferSystemCodeFromText maps a NUL-terminated or logical message string to a
 // SystemCode, matching databento-cpp SystemMsg::ToV2 string patterns in v1.cpp.
 func inferSystemCodeFromText(text []byte) SystemCode {
 	if len(text) == 0 {
 		return SystemCode_Unset
 	}
-	if bytes.HasPrefix(text, []byte(SystemCodeString_Heartbeat)) {
+	if bytes.HasPrefix(text, []byte(systemMsgHeartbeatText)) {
 		return SystemCode_Heartbeat
 	}
 	if bytes.HasPrefix(text, []byte("End of interval for ")) {

@@ -96,7 +96,7 @@ func (r *SystemMsgV1) Fill_Json(val *fastjson.Value, header *RHeader) error {
 // IsHeartbeat reports whether the V1 wire message body starts with "Heartbeat"
 // (9 bytes, matching databento-cpp v1.hpp).
 func (r *SystemMsgV1) IsHeartbeat() bool {
-	return bytes.HasPrefix(r.Msg[:], []byte(SystemCodeString_Heartbeat))
+	return bytes.HasPrefix(r.Msg[:], []byte(systemMsgHeartbeatText))
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -750,7 +750,7 @@ func (r *SystemMsg) Fill_Json(val *fastjson.Value, header *RHeader) error {
 // otherwise code must equal SystemCode_Heartbeat.
 func (r *SystemMsg) IsHeartbeat() bool {
 	if r.Code == SystemCode_Unset {
-		return bytes.HasPrefix(r.Message[:], []byte(SystemCodeString_Heartbeat))
+		return bytes.HasPrefix(r.Message[:], []byte(systemMsgHeartbeatText))
 	}
 	return r.Code == SystemCode_Heartbeat
 }

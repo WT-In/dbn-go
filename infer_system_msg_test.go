@@ -2,6 +2,12 @@ package dbn
 
 import "testing"
 
+func TestSystemCodeHeartbeatStringIsEnumName(t *testing.T) {
+	if got := SystemCode(SystemCode_Heartbeat).String(); got != "HEARTBEAT" {
+		t.Fatalf("SystemCode_Heartbeat.String() = %q; want %q", got, "HEARTBEAT")
+	}
+}
+
 func TestInferSystemCodeFromText(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

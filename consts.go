@@ -966,9 +966,8 @@ const (
 	/// Signals that all records for interval-based schemas have been published for the given timestamp.
 	SystemCode_EndOfInterval = 4
 	/// No system code was specified or this record was upgraded from a version 1 struct where the code field didn't exist.
-	SystemCode_Unset = 255
-	// Heartbeat string (case-sensitive on the wire in V1 msg; see databento-cpp v1.hpp)
-	SystemCodeString_Heartbeat = "Heartbeat"
+	SystemCode_Unset           = 255
+	SystemCodeString_Heartbeat = "HEARTBEAT"
 )
 
 // Returns the string representation of the SystemCode, or empty string if unknown.
