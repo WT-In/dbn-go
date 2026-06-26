@@ -486,6 +486,161 @@ var _ = Describe("DbnLive", func() {
 			Expect(record.Header.InstrumentID).To(Equal(uint32(5482)))
 		})
 	})
+
+	Context("gateway errors", func() {
+		const invalidStart = "Invalid start time. Must be 2026-05-31T00:00:00+00:00 or later"
+
+		It("parseGatewayError extracts the error text when success=0", func() {
+			msg, ok := parseGatewayError([]byte("success=0|error=" + invalidStart + "\n"))
+			Expect(ok).To(BeTrue())
+			Expect(msg).To(Equal(invalidStart))
+		})
+
+		It("parseGatewayError returns false for success=1 and empty input", func() {
+			_, ok := parseGatewayError([]byte("success=1|session_id=x\n"))
+			Expect(ok).To(BeFalse())
+			_, ok = parseGatewayError(nil)
+			Expect(ok).To(BeFalse())
+		})
+
+		It("Subscribe surfaces the gateway error when a write fails mid-subscribe", func() {
+			// closed:true makes Write fail like a broken pipe after the gateway
+			// closed the connection; Read still serves the pending error line.
+			conn := &scriptedConn{
+				closed: true,
+				reads:  [][]byte{[]byte("success=0|error=" + invalidStart + "\n")},
+			}
+			client := &LiveClient{
+				conn:      conn,
+				bufReader: bufio.NewReaderSize(conn, MAX_STR_LENGTH),
+			}
+
+			err := client.Subscribe(SubscriptionRequestMsg{
+				Schema:  "mbp-1",
+				StypeIn: dbn.SType_Continuous,
+				Symbols: []string{"ES.c.0"},
+			})
+
+			Expect(err).To(HaveOccurred())
+			var gwErr *GatewayError
+			Expect(errors.As(err, &gwErr)).To(BeTrue())
+			Expect(gwErr.Message).To(Equal(invalidStart))
+			Expect(errors.Is(err, net.ErrClosed)).To(BeTrue())
+		})
+
+		It("Subscribe falls back to the transport error when no gateway error is pending", func() {
+			conn := &scriptedConn{closed: true} // Write fails, Read returns EOF
+			client := &LiveClient{
+				conn:      conn,
+				bufReader: bufio.NewReaderSize(conn, MAX_STR_LENGTH),
+			}
+
+			err := client.Subscribe(SubscriptionRequestMsg{
+				Schema:  "mbp-1",
+				StypeIn: dbn.SType_Continuous,
+				Symbols: []string{"ES.c.0"},
+			})
+
+			Expect(err).To(HaveOccurred())
+			var gwErr *GatewayError
+			Expect(errors.As(err, &gwErr)).To(BeFalse())
+			Expect(err.Error()).To(ContainSubstring("failed to send subscribe request"))
+		})
+
+		It("Start surfaces the gateway error when the gateway rejects the session", func() {
+			conn := &scriptedConn{
+				reads: [][]byte{
+					[]byte("lsg_version=1.0\n"),
+					[]byte("cram=challenge-value\n"),
+					[]byte("success=1|session_id=sess-42\n"),
+					[]byte("success=0|error=" + invalidStart + "\n"),
+				},
+			}
+			client := &LiveClient{
+				config: LiveConfig{
+					Dataset:  "GLBX.MDP3",
+					Encoding: dbn.Encoding_Dbn,
+				},
+				conn:      conn,
+				bufReader: bufio.NewReaderSize(conn, MAX_STR_LENGTH),
+			}
+
+			_, err := client.Authenticate("db-89s9vCvwDDKPdQJ5Pb30Fyj9mNUM6")
+			Expect(err).To(BeNil())
+
+			err = client.Start()
+			Expect(err).To(HaveOccurred())
+			var gwErr *GatewayError
+			Expect(errors.As(err, &gwErr)).To(BeTrue())
+			Expect(gwErr.Message).To(Equal(invalidStart))
+			Expect(conn.writes.String()).To(ContainSubstring("start_session="))
+		})
+
+		It("parseGatewayError reports an error even when the error text is missing", func() {
+			msg, ok := parseGatewayError([]byte("success=0\n"))
+			Expect(ok).To(BeTrue())
+			Expect(msg).NotTo(BeEmpty())
+		})
+
+		It("Start returns an explicit error for an unexpected control message without consuming metadata silently", func() {
+			conn := &scriptedConn{
+				reads: [][]byte{[]byte("success=9|note=weird\n")},
+			}
+			client := &LiveClient{
+				config:    LiveConfig{Dataset: "GLBX.MDP3", Encoding: dbn.Encoding_Dbn},
+				conn:      conn,
+				bufReader: bufio.NewReaderSize(conn, MAX_STR_LENGTH),
+			}
+
+			err := client.Start()
+			Expect(err).To(HaveOccurred())
+			var gwErr *GatewayError
+			Expect(errors.As(err, &gwErr)).To(BeFalse())
+			Expect(err.Error()).To(ContainSubstring("unexpected control message"))
+		})
+
+		It("Start surfaces the gateway error when the start write fails", func() {
+			conn := &scriptedConn{
+				closed: true,
+				reads:  [][]byte{[]byte("success=0|error=" + invalidStart + "\n")},
+			}
+			client := &LiveClient{
+				config:    LiveConfig{Dataset: "GLBX.MDP3", Encoding: dbn.Encoding_Dbn},
+				conn:      conn,
+				bufReader: bufio.NewReaderSize(conn, MAX_STR_LENGTH),
+			}
+
+			err := client.Start()
+			Expect(err).To(HaveOccurred())
+			var gwErr *GatewayError
+			Expect(errors.As(err, &gwErr)).To(BeTrue())
+			Expect(gwErr.Message).To(Equal(invalidStart))
+			Expect(errors.Is(err, net.ErrClosed)).To(BeTrue())
+		})
+
+		It("Authenticate surfaces the gateway error when the auth write fails", func() {
+			conn := &scriptedConn{
+				closed: true,
+				reads: [][]byte{
+					[]byte("lsg_version=1.0\n"),
+					[]byte("cram=challenge-value\n"),
+					[]byte("success=0|error=" + invalidStart + "\n"),
+				},
+			}
+			client := &LiveClient{
+				config:    LiveConfig{Dataset: "GLBX.MDP3", Encoding: dbn.Encoding_Dbn},
+				conn:      conn,
+				bufReader: bufio.NewReaderSize(conn, MAX_STR_LENGTH),
+			}
+
+			_, err := client.Authenticate("db-89s9vCvwDDKPdQJ5Pb30Fyj9mNUM6")
+			Expect(err).To(HaveOccurred())
+			var gwErr *GatewayError
+			Expect(errors.As(err, &gwErr)).To(BeTrue())
+			Expect(gwErr.Message).To(Equal(invalidStart))
+			Expect(errors.Is(err, net.ErrClosed)).To(BeTrue())
+		})
+	})
 })
 
 type writeCapture struct {
