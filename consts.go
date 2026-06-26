@@ -1151,6 +1151,28 @@ func (e ErrorCode) String() string {
 	}
 }
 
+// IsFatal reports whether this error code causes the live gateway to close the
+// session after sending the error record, per
+// https://databento.com/docs/api-reference-live/basics/error-detection.
+// Non-fatal codes (SymbolResolutionFailed, SkippedRecordsAfterSlowReading) are
+// informational and the session continues. Unset is not a documented fatal code
+// and returns false.
+//
+// It is provided for callers that inspect ErrorMsg records while streaming and
+// need to decide whether to tear down the session.
+func (e ErrorCode) IsFatal() bool {
+	switch e {
+	case ErrorCode_AuthFailed,
+		ErrorCode_ApiKeyDeactivated,
+		ErrorCode_ConnectionLimitExceeded,
+		ErrorCode_InvalidSubscription,
+		ErrorCode_InternalError:
+		return true
+	default:
+		return false
+	}
+}
+
 // ErrorCodeFromString converts a string to an ErrorCode.
 // Returns an error if the string is unknown.
 func ErrorCodeFromString(str string) (ErrorCode, error) {

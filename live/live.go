@@ -6,6 +6,7 @@ package dbn_live
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -90,6 +91,94 @@ func newBufReader(conn net.Conn, cfg LiveConfig) (*bufio.Reader, *deadlineReader
 	dr := &deadlineReader{conn: conn}
 	dr.setTimeout(cfg.HandshakeReadTimeout)
 	return bufio.NewReaderSize(dr, MAX_STR_LENGTH), dr
+}
+
+// gatewayErrorPrefix is the leading bytes of a Raw API error response control
+// message (success=0|error=...). The live gateway sends one immediately before
+// closing the connection when it rejects a control-phase request, such as a
+// subscription with an invalid start time.
+var gatewayErrorPrefix = []byte("success=")
+
+// controlErrorReadTimeout bounds the best-effort read used to recover the
+// gateway's real error after a control-phase transport failure (e.g. a
+// broken-pipe write during Subscribe). It only applies on the error path, so it
+// adds no latency to a healthy session.
+const controlErrorReadTimeout = 2 * time.Second
+
+// GatewayError reports an error the live gateway sent as a control message
+// (success=0|error=...), such as a rejected subscription. Message holds the
+// gateway's error text; Err wraps the underlying transport error (e.g. the
+// broken-pipe write seen when the gateway closes the connection), if any.
+type GatewayError struct {
+	Message string
+	Err     error
+}
+
+func (e *GatewayError) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("gateway error: %s: %v", e.Message, e.Err)
+	}
+	return fmt.Sprintf("gateway error: %s", e.Message)
+}
+
+func (e *GatewayError) Unwrap() error { return e.Err }
+
+// parseGatewayError returns the gateway's error text when line is a control
+// message reporting success=0, matching the Raw API error response format.
+func parseGatewayError(line []byte) (string, bool) {
+	if len(line) == 0 {
+		return "", false
+	}
+	m := parseControlMessage(line)
+	if m["success"] == "0" {
+		if msg := m["error"]; msg != "" {
+			return msg, true
+		}
+		// success=0 is a rejection even when the gateway omits the error text;
+		// report it rather than losing the failure with an empty message.
+		return "gateway rejected the request without an error message", true
+	}
+	return "", false
+}
+
+// readGatewayError does a best-effort, deadline-bounded read of a single pending
+// control message and returns its error text if it reports success=0. It is used
+// after a control-phase transport failure to surface the gateway's real reason;
+// any read problem yields ("", false).
+func (c *LiveClient) readGatewayError(timeout time.Duration) (string, bool) {
+	if c.bufReader == nil {
+		return "", false
+	}
+	// The gateway sends its error in the same TCP segment as the close, so the
+	// line is usually already buffered. Arm a deadline only when no complete line
+	// is buffered yet, so a silent-but-still-open connection can't hang the caller
+	// for the whole timeout on this error path.
+	buffered, _ := c.bufReader.Peek(c.bufReader.Buffered())
+	if bytes.IndexByte(buffered, '\n') < 0 {
+		if c.deadlineReader != nil {
+			prev := time.Duration(c.deadlineReader.timeout.Load())
+			c.deadlineReader.setTimeout(timeout)
+			defer c.deadlineReader.setTimeout(prev)
+		} else if c.conn != nil {
+			_ = c.conn.SetReadDeadline(time.Now().Add(timeout))
+			defer func() { _ = c.conn.SetReadDeadline(time.Time{}) }()
+		}
+	}
+	line, _ := c.bufReader.ReadBytes('\n')
+	return parseGatewayError(line)
+}
+
+// wrapWriteError turns a control-phase write failure into the gateway's real
+// rejection reason when one is pending. The gateway sends a success=0|error=...
+// control response and closes the connection when it rejects a control request,
+// so the next write fails (e.g. broken pipe); reading the pending line recovers
+// that reason. action is the fallback message used when no gateway error is
+// available.
+func (c *LiveClient) wrapWriteError(action string, writeErr error) error {
+	if msg, ok := c.readGatewayError(controlErrorReadTimeout); ok {
+		return &GatewayError{Message: msg, Err: writeErr}
+	}
+	return fmt.Errorf("%s: %w", action, writeErr)
 }
 
 type SystemMsgV1 struct {
@@ -308,7 +397,7 @@ func (c *LiveClient) Subscribe(sub SubscriptionRequestMsg) error {
 		}
 		n, err := c.conn.Write(line)
 		if err != nil {
-			return fmt.Errorf("failed to send subscribe request: %w", err)
+			return c.wrapWriteError("failed to send subscribe request", err)
 		}
 		if n != len(line) {
 			return fmt.Errorf("failed to send subscribe request: wanted %d sent %d", len(line), n)
@@ -362,7 +451,7 @@ func (c *LiveClient) Start() error {
 	msg := SessionStartMsg{}
 	startBytes := msg.Encode()
 	if n, err := c.conn.Write(startBytes); err != nil {
-		return fmt.Errorf("failed to send start: %v", err)
+		return c.wrapWriteError("failed to send start", err)
 	} else if n != len(startBytes) {
 		return fmt.Errorf("failed to send start: wanted %d sent %d", len(startBytes), n)
 	}
@@ -376,8 +465,22 @@ func (c *LiveClient) Start() error {
 
 	// Create a DbnScanner and ensure we get the metadata
 	if c.config.Encoding == dbn.Encoding_Json {
+		//TODO: should we also handle rejected session in JSON mode?
 		c.jsonScanner = dbn.NewJsonScanner(c.bufReader)
 	} else {
+		// DBN metadata begins with the DBN magic, never the textual "success=",
+		// so a "success=" prefix here is a control message rather than metadata.
+		// Peek leaves the happy path untouched; once matched, read the whole line
+		// and surface it instead of feeding it to the DBN scanner. success=0 is a
+		// rejection; any other control response is unexpected at this point and is
+		// reported explicitly rather than silently consumed.
+		if prefix, _ := c.bufReader.Peek(len(gatewayErrorPrefix)); bytes.HasPrefix(prefix, gatewayErrorPrefix) {
+			line, _ := c.bufReader.ReadBytes('\n')
+			if msg, ok := parseGatewayError(line); ok {
+				return &GatewayError{Message: msg}
+			}
+			return fmt.Errorf("unexpected control message before metadata: %q", bytes.TrimRight(line, "\r\n"))
+		}
 		c.dbnScanner = dbn.NewDbnScanner(c.bufReader)
 		metadata, err := c.dbnScanner.Metadata()
 		if err != nil {
@@ -441,7 +544,7 @@ func (c *LiveClient) Authenticate(apiKey string) (string, error) {
 	}
 	requestBytes := request.Encode()
 	if n, err := c.conn.Write(requestBytes); err != nil {
-		return "", fmt.Errorf("failed to send auth request: %v", err)
+		return "", c.wrapWriteError("failed to send auth request", err)
 	} else if n != len(requestBytes) {
 		return "", fmt.Errorf("failed to send auth request: wanted %d sent %d", len(requestBytes), n)
 	}
